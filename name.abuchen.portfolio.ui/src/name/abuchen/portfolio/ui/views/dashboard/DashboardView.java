@@ -311,12 +311,12 @@ public class DashboardView extends AbstractHistoricView
 
     public static final String INFO_MENU_GROUP_NAME = "info"; //$NON-NLS-1$
 
-    private static final String SELECTED_DASHBOARD_KEY = "selected-dashboard"; //$NON-NLS-1$
+    private static final String DEFAULT_SELECTED_DASHBOARD_KEY = "selected-dashboard"; //$NON-NLS-1$
     /* package */ static final String DELEGATE_KEY = "$delegate"; //$NON-NLS-1$
     private static final String FILLER_KEY = "$filler"; //$NON-NLS-1$
 
     @Inject
-    private PartPersistedState persistedState;
+    protected PartPersistedState persistedState;
 
     @Inject
     private UISynchronize sync;
@@ -442,17 +442,29 @@ public class DashboardView extends AbstractHistoricView
         dashboardData.setDefaultReportingPeriods(getPart().getClientInput().getReportingPeriods());
         dashboardData.setDefaultReportingPeriod(getReportingPeriod());
 
-        int indexOfSelectedDashboard = Math.max(0, persistedState.getInt(SELECTED_DASHBOARD_KEY));
+        int indexOfSelectedDashboard = Math.max(0, persistedState.getInt(getSelectedDashboardStateKey()));
 
         dashboard = getClient().getDashboards() //
                         .skip(indexOfSelectedDashboard) //
-                        .findFirst().orElseGet(() -> {
-                            Dashboard newDashboard = createDefaultDashboard();
-                            getClient().addDashboard(newDashboard);
-                            markDirty();
-                            createDashboardToolItems(getToolBarManager());
-                            return newDashboard;
-                        });
+                        .findFirst().orElse(null);
+
+        // If the selected dashboard is not accessible in this view (e.g. it
+        // only contains optimization widgets), try to find another suitable
+        // dashboard before creating a new default one.
+        if (dashboard != null && !isDashboardAccessibleInView(dashboard))
+        {
+            dashboard = getClient().getDashboards() //
+                            .filter(this::isDashboardAccessibleInView) //
+                            .findFirst().orElse(null);
+        }
+
+        if (dashboard == null)
+        {
+            dashboard = createDefaultDashboard();
+            getClient().addDashboard(dashboard);
+            markDirty();
+            createDashboardToolItems(getToolBarManager());
+        }
 
         scrolledComposite = new ScrolledComposite(parent, SWT.V_SCROLL);
 
@@ -471,10 +483,15 @@ public class DashboardView extends AbstractHistoricView
         parent.getParent().addControlListener(listener);
         scrolledComposite.addDisposeListener(e -> parent.getParent().removeControlListener(listener));
 
-        container.addDisposeListener(e -> persistedState.setValue(SELECTED_DASHBOARD_KEY,
+        container.addDisposeListener(e -> persistedState.setValue(getSelectedDashboardStateKey(),
                         getClient().getDashboards().toList().indexOf(dashboard)));
 
         return scrolledComposite;
+    }
+
+    protected String getSelectedDashboardStateKey()
+    {
+        return DEFAULT_SELECTED_DASHBOARD_KEY;
     }
 
     public void updateScrolledCompositeMinSize()
@@ -541,6 +558,9 @@ public class DashboardView extends AbstractHistoricView
                 if (factory == null)
                     continue;
 
+                if (!isWidgetAccessibleInView(factory))
+                    continue;
+
                 buildDelegateAndMoveAboveFiller(columnControl, factory, widget);
             }
             catch (IllegalArgumentException e)
@@ -562,6 +582,9 @@ public class DashboardView extends AbstractHistoricView
 
         for (WidgetFactory type : WidgetFactory.values())
         {
+            if (!isWidgetAccessibleInView(type))
+                continue;
+
             MenuManager mm = group2menu.computeIfAbsent(type.getGroup(), group -> {
                 MenuManager groupMenu = new MenuManager(group);
                 subMenu.add(groupMenu);
@@ -597,6 +620,43 @@ public class DashboardView extends AbstractHistoricView
 
         manager.add(new Separator());
         manager.add(new SimpleAction(Messages.MenuDeleteDashboardColumn, a -> deleteColumn(columnControl)));
+    }
+
+    protected boolean isWidgetAccessibleInView(WidgetFactory type)
+    {
+        return !type.isOptimizationWidget();
+    }
+
+    /**
+     * Checks whether a dashboard is suitable for this view. A dashboard is
+     * accessible if it contains at least one widget that passes
+     * {@link #isWidgetAccessibleInView(WidgetFactory)}, or if it has no widgets
+     * at all (empty dashboard).
+     */
+    protected boolean isDashboardAccessibleInView(Dashboard board)
+    {
+        boolean hasAnyWidget = false;
+
+        for (Dashboard.Column column : board.getColumns())
+        {
+            for (Dashboard.Widget widget : column.getWidgets())
+            {
+                hasAnyWidget = true;
+                try
+                {
+                    WidgetFactory factory = WidgetFactory.valueOf(widget.getType());
+                    if (isWidgetAccessibleInView(factory))
+                        return true;
+                }
+                catch (IllegalArgumentException e)
+                {
+                    // unknown widget type, skip
+                }
+            }
+        }
+
+        // An empty dashboard is accessible in any view
+        return !hasAnyWidget;
     }
 
     private Pair<WidgetDelegate<?>, Composite> buildDelegateAndMoveAboveFiller(Composite columnControl,

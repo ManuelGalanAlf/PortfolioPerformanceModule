@@ -5,18 +5,26 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
+import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.stream.LongStream;
 
+import name.abuchen.portfolio.math.AdvancedRiskMetrics;
 import name.abuchen.portfolio.math.AllTimeHigh;
+import name.abuchen.portfolio.math.Covariance;
+import name.abuchen.portfolio.math.PortfolioAnalytics;
 import name.abuchen.portfolio.math.Risk.Drawdown;
 import name.abuchen.portfolio.math.Risk.Volatility;
 import name.abuchen.portfolio.model.ClientProperties;
 import name.abuchen.portfolio.model.Dashboard;
 import name.abuchen.portfolio.model.Dashboard.Widget;
+import name.abuchen.portfolio.model.Portfolio;
 import name.abuchen.portfolio.model.Security;
 import name.abuchen.portfolio.money.Money;
 import name.abuchen.portfolio.money.Values;
@@ -27,6 +35,7 @@ import name.abuchen.portfolio.ui.Messages;
 import name.abuchen.portfolio.ui.views.dashboard.charts.ClientDataSeriesChartWidget;
 import name.abuchen.portfolio.ui.views.dashboard.charts.DrawdownChartWidget;
 import name.abuchen.portfolio.ui.views.dashboard.charts.HoldingsChartWidget;
+import name.abuchen.portfolio.ui.views.dashboard.charts.PortfolioRiskContributionChartWidget;
 import name.abuchen.portfolio.ui.views.dashboard.charts.RebalancingChartWidget;
 import name.abuchen.portfolio.ui.views.dashboard.charts.RebalancingTargetChartWidget;
 import name.abuchen.portfolio.ui.views.dashboard.charts.TaxonomyChartWidget;
@@ -35,7 +44,6 @@ import name.abuchen.portfolio.ui.views.dashboard.earnings.EarningsChartWidget;
 import name.abuchen.portfolio.ui.views.dashboard.earnings.EarningsHeatmapWidget;
 import name.abuchen.portfolio.ui.views.dashboard.earnings.EarningsListWidget;
 import name.abuchen.portfolio.ui.views.dashboard.earnings.EarningsListWidget.ExpansionSetting;
-
 import name.abuchen.portfolio.ui.views.dashboard.heatmap.CostHeatmapWidget;
 import name.abuchen.portfolio.ui.views.dashboard.heatmap.InvestmentHeatmapWidget;
 import name.abuchen.portfolio.ui.views.dashboard.heatmap.PerformanceHeatmapWidget;
@@ -59,8 +67,8 @@ public enum WidgetFactory
                                         PerformanceIndex index = data.calculate(ds, period);
                                         int length = index.getTotals().length;
                                         return Money.of(index.getCurrency(), index.getTotals()[length - 1]);
-                                    }) //
-                                    .withBenchmarkDataSeries(false) //
+                                    })//
+                                    .withBenchmarkDataSeries(false)//
                                     .build()),
 
     TTWROR(Messages.LabelTTWROR, Messages.ClientEditorLabelPerformance, // cumulative
@@ -82,7 +90,21 @@ public enum WidgetFactory
     IRR(Messages.LabelIRR, Messages.ClientEditorLabelPerformance, //
                     (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
                                     .with(Values.AnnualizedPercent2) //
-                                    .with((ds, period) -> data.calculate(ds, period).getPerformanceIRR()) //
+                                    .with((ds, period) -> data.calculate(ds, period).getPerformanceIRR())//
+                                    .build()),
+
+    EXPECTED_RETURN_ANNUALIZED(Messages.LabelExpectedReturnAnnualized, Messages.ClientEditorLabelPerformance, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.AnnualizedPercent2) //
+                                    .with((ds, period) -> {
+                                        PerformanceIndex index = data.calculate(ds, period);
+                                        double expected = AdvancedRiskMetrics.expectedReturn(index);
+                                        if (Double.isNaN(expected))
+                                            return Double.NaN;
+
+                                        return expected * name.abuchen.portfolio.math.FinancialConstants.US_TRADING_DAYS_PER_YEAR;
+                                    }) //
+                                    .withColoredValues(false)//
                                     .build()),
 
     ABSOLUTE_CHANGE(Messages.LabelAbsoluteChange, Messages.LabelStatementOfAssets, //
@@ -93,8 +115,8 @@ public enum WidgetFactory
                                         int length = index.getTotals().length;
                                         return Money.of(index.getCurrency(),
                                                         index.getTotals()[length - 1] - index.getTotals()[0]);
-                                    }) //
-                                    .withBenchmarkDataSeries(false) //
+                                    })//
+                                    .withBenchmarkDataSeries(false)//
                                     .build()),
 
     DELTA(Messages.LabelDelta, Messages.LabelStatementOfAssets, //
@@ -103,8 +125,8 @@ public enum WidgetFactory
                                     .with((ds, period) -> {
                                         long[] d = data.calculate(ds, period).calculateDelta();
                                         return Money.of(data.getTermCurrency(), d.length > 0 ? d[d.length - 1] : 0L);
-                                    }) //
-                                    .withBenchmarkDataSeries(false) //
+                                    })//
+                                    .withBenchmarkDataSeries(false)//
                                     .build()),
 
     ABSOLUTE_DELTA(Messages.LabelAbsoluteDelta, Messages.LabelStatementOfAssets, //
@@ -113,21 +135,20 @@ public enum WidgetFactory
                                     .with((ds, period) -> {
                                         long[] d = data.calculate(ds, period).calculateAbsoluteDelta();
                                         return Money.of(data.getTermCurrency(), d.length > 0 ? d[d.length - 1] : 0L);
-                                    }) //
-                                    .withBenchmarkDataSeries(false) //
+                                    })//
+                                    .withBenchmarkDataSeries(false)//
                                     .build()),
 
     SAVINGS(Messages.LabelPNTransfers, Messages.LabelStatementOfAssets, //
                     (widget, data) -> IndicatorWidget.<Money>create(widget, data) //
                                     .with(Values.Money) //
                                     .with((ds, period) -> {
-                                        long[] d = data.calculate(ds, period).getTransferals();
-                                        // skip d[0] because it refers to the
+                                        long[] d = data.calculate(ds, period).getTransferals();// skip d[0] because it refers to the
                                         // day before start
                                         return Money.of(data.getTermCurrency(),
                                                         d.length > 1 ? LongStream.of(d).skip(1).sum() : 0L);
-                                    }) //
-                                    .withBenchmarkDataSeries(false) //
+                                    })//
+                                    .withBenchmarkDataSeries(false)//
                                     .build()),
 
     MONTHLY_PN_TRANSFERS(Messages.LabelMonthlyPNTransfers, Messages.LabelStatementOfAssets,
@@ -139,8 +160,8 @@ public enum WidgetFactory
                                     .with((ds, period) -> {
                                         long[] d = data.calculate(ds, period).calculateInvestedCapital();
                                         return Money.of(data.getTermCurrency(), d.length > 0 ? d[d.length - 1] : 0L);
-                                    }) //
-                                    .withBenchmarkDataSeries(false) //
+                                    })//
+                                    .withBenchmarkDataSeries(false)//
                                     .build()),
 
     ABSOLUTE_INVESTED_CAPITAL(Messages.LabelAbsoluteInvestedCapital, Messages.LabelStatementOfAssets, //
@@ -149,8 +170,8 @@ public enum WidgetFactory
                                     .with((ds, period) -> {
                                         long[] d = data.calculate(ds, period).calculateAbsoluteInvestedCapital();
                                         return Money.of(data.getTermCurrency(), d.length > 0 ? d[d.length - 1] : 0L);
-                                    }) //
-                                    .withBenchmarkDataSeries(false) //
+                                    })//
+                                    .withBenchmarkDataSeries(false)//
                                     .build()),
 
     RATIO(Messages.LabelRatio, Messages.LabelStatementOfAssets, RatioWidget::new),
@@ -172,8 +193,8 @@ public enum WidgetFactory
                                                         formatter.format(
                                                                         drawdown.getIntervalOfMaxDrawdown().getStart()),
                                                         formatter.format(drawdown.getIntervalOfMaxDrawdown().getEnd()));
-                                    }) //
-                                    .withColoredValues(false) //
+                                    })//
+                                    .withColoredValues(false)//
                                     .build()),
 
     CURRENT_DRAWDOWN(Messages.LabelCurrentDrawdown, Messages.LabelRiskIndicators, //
@@ -251,8 +272,8 @@ public enum WidgetFactory
                                         LocalDate highWatermarkDate = period.getStart().plusDays(highWatermarkIndex);
                                         return MessageFormat.format(Messages.TooltipCurrentDrawdown,
                                                         formatter.format(highWatermarkDate));
-                                    }) //
-                                    .withColoredValues(true) //
+                                    })//
+                                    .withColoredValues(true)//
                                     .build()),
 
     MAXDRAWDOWNDURATION(Messages.LabelMaxDrawdownDuration, Messages.LabelRiskIndicators,
@@ -268,8 +289,8 @@ public enum WidgetFactory
                                         PerformanceIndex index = data.calculate(ds, period);
                                         return index.getVolatility().getStandardDeviation();
                                     }) //
-                                    .withTooltip((ds, period) -> Messages.TooltipVolatility) //
-                                    .withColoredValues(false) //
+                                    .withTooltip((ds, period) -> Messages.TooltipVolatility)//
+                                    .withColoredValues(false)//
                                     .build()),
 
     SHARPE_RATIO(Messages.LabelSharpeRatio, Messages.LabelRiskIndicators, //
@@ -299,6 +320,99 @@ public enum WidgetFactory
                                         return MessageFormat.format(Messages.TooltipSharpeRatio,
                                                         Values.Percent5.format(r), Values.Percent2.format(rf),
                                                         volatility, sharpeRatio);
+                                    })//
+                                    .build()),
+
+    SHARPE_RATIO_ANNUALIZED(Messages.LabelSharpeRatioAnnualized, Messages.LabelRiskIndicators, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.PercentPlain) //
+                                    .withColoredValues(false) //
+                                    .withConfig(delegate -> new RiskFreeRateOfReturnConfig(delegate)) //
+                                    .with((ds, period) -> {
+                                        PerformanceIndex index = data.calculate(ds, period);
+                                        double rf = new ClientProperties(data.getClient()).getRiskFreeRateOfReturn();
+                                        return AdvancedRiskMetrics.sharpeRatio(index, rf);
+                                    }) //
+                                    .withTooltip((ds, period) -> Messages.TooltipSharpeRatio)//
+                                    .build()),
+
+    DOWNSIDE_RISK(Messages.LabelDownsideRisk, Messages.LabelRiskIndicators, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.Percent2) //
+                                    .withColoredValues(false) //
+                                    .with((ds, period) -> {
+                                        PerformanceIndex index = data.calculate(ds, period);
+                                        double[] delta = index.getDeltaPercentage();
+                                        if (delta == null || delta.length < 2)
+                                            return Double.NaN;
+
+                                        double downsideRisk = AdvancedRiskMetrics.downsideRisk(delta, 0.0);
+                                        return downsideRisk
+                                                        * Math.sqrt(name.abuchen.portfolio.math.FinancialConstants.US_TRADING_DAYS_PER_YEAR);
+                                    }) //
+                                    .build()),
+
+    SORTINO_RATIO(Messages.LabelSortinoRatio, Messages.LabelRiskIndicators, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.PercentPlain) //
+                                    .withColoredValues(false) //
+                                    .withConfig(delegate -> new RiskFreeRateOfReturnConfig(delegate)) //
+                                    .with((ds, period) -> {
+                                        PerformanceIndex index = data.calculate(ds, period);
+                                        double rf = new ClientProperties(data.getClient()).getRiskFreeRateOfReturn();
+                                        return AdvancedRiskMetrics.sortinoRatio(index, rf);
+                                    }) //
+                                    .build()),
+
+    CALMAR_RATIO(Messages.LabelCalmarRatio, Messages.LabelRiskIndicators, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.PercentPlain) //
+                                    .withColoredValues(false) //
+                                    .with((ds, period) -> {
+                                        PerformanceIndex index = data.calculate(ds, period);
+                                        return AdvancedRiskMetrics.calmarRatio(index);
+                                    }) //
+                                    .build()),
+
+    VALUE_AT_RISK(Messages.LabelValueAtRisk, Messages.LabelRiskIndicators, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.Percent2) //
+                                    .withColoredValues(false) //
+                                    .with((ds, period) -> {
+                                        PerformanceIndex index = data.calculate(ds, period);
+                                        return AdvancedRiskMetrics.valueAtRisk(index, 0.95);
+                                    }) //
+                                    .build()),
+
+    TRACKING_ERROR_ANNUALIZED(Messages.LabelTrackingErrorAnnualized, Messages.LabelRiskIndicators,
+                    (widget, data) -> new BenchmarkMetricWidget(widget, data,
+                                    BenchmarkMetricWidget.MetricType.TRACKING_ERROR_ANNUALIZED)),
+
+    TRACKING_ERROR_DAILY(Messages.LabelTrackingErrorDaily, Messages.LabelRiskIndicators,
+                    (widget, data) -> new BenchmarkMetricWidget(widget, data,
+                                    BenchmarkMetricWidget.MetricType.TRACKING_ERROR_DAILY)),
+
+    INFORMATION_RATIO(Messages.LabelInformationRatio, Messages.LabelRiskIndicators,
+                    (widget, data) -> new BenchmarkMetricWidget(widget, data,
+                                    BenchmarkMetricWidget.MetricType.INFORMATION_RATIO)),
+
+    SKEWNESS(Messages.LabelSkewness, Messages.LabelRiskIndicators, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.PercentPlain) //
+                                    .withColoredValues(false) //
+                                    .with((ds, period) -> {
+                                        PerformanceIndex index = data.calculate(ds, period);
+                                        return AdvancedRiskMetrics.skewness(index);
+                                    }) //
+                                    .build()),
+
+    EXCESS_KURTOSIS(Messages.LabelExcessKurtosis, Messages.LabelRiskIndicators, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.PercentPlain) //
+                                    .withColoredValues(false) //
+                                    .with((ds, period) -> {
+                                        PerformanceIndex index = data.calculate(ds, period);
+                                        return AdvancedRiskMetrics.excessKurtosis(index);
                                     }) //
                                     .build()),
 
@@ -317,8 +431,8 @@ public enum WidgetFactory
                                                         vola.getNormalizedSemiDeviationComparison(),
                                                         Values.Percent5.format(vola.getStandardDeviation()),
                                                         Values.Percent5.format(vola.getSemiDeviation()));
-                                    }) //
-                                    .withColoredValues(false) //
+                                    })//
+                                    .withColoredValues(false)//
                                     .build()),
 
     CALCULATION(Messages.LabelPerformanceCalculation, Messages.ClientEditorLabelPerformance,
@@ -400,7 +514,7 @@ public enum WidgetFactory
                                                                                         ? Long.min(buy, sell) / average
                                                                                                         .getAsDouble()
                                                                                         : 0));
-                                    }) //
+                                    })//
                                     .withColoredValues(false).build()),
 
     HEATMAP_INVESTMENTS(Messages.LabelHeatmapInvestments, Messages.LabelTrades, InvestmentHeatmapWidget::new),
@@ -457,7 +571,7 @@ public enum WidgetFactory
                                         return MessageFormat.format(Messages.TooltipSecurityLatestPrice,
                                                         security.getName(), Values.Date.format(security
                                                                         .getSecurityPrice(LocalDate.now()).getDate()));
-                                    }) //
+                                    })//
                                     .build()),
 
     DISTANCE_TO_ATH(Messages.SecurityListFilterDistanceFromAth, Messages.LabelCommon, //
@@ -494,7 +608,7 @@ public enum WidgetFactory
                                                                         / Values.Quote.divider(),
                                                         Values.Date.format(security.getSecurityPrice(LocalDate.now())
                                                                         .getDate()));
-                                    }) //
+                                    })//
                                     .build()),
 
     WEBSITE(Messages.Website, Messages.LabelCommon, BrowserWidget::new),
@@ -546,8 +660,78 @@ public enum WidgetFactory
                                         LocalDate date = period.getStart().plusDays(maxIndex);
                                         return MessageFormat.format(Messages.TooltipAllTimeHighWidget,
                                                         formatter.format(date));
-                                    }) //
-                                    .build());
+                                    })//
+                                    .build()),
+
+    // Portfolio Analytics widgets used by the dedicated optimization view.
+    PORTFOLIO_ANALYTICS_EXPECTED_RETURN(Messages.LabelExpectedReturnAnnualized, Messages.LabelOptimization, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.AnnualizedPercent2) //
+                                    .with((ds, period) -> withPortfolioAnalytics(data, ds, period,
+                                                    input -> input.analytics.getPortfolioExpectedReturn(input.weights)
+                                                                    * name.abuchen.portfolio.math.FinancialConstants.US_TRADING_DAYS_PER_YEAR)) //
+                                    .withColoredValues(false) //
+                                    .withBenchmarkDataSeries(false) //
+                                    .with(WidgetFactory::isPortfolioAnalyticsSupportedDataSeries) //
+                                    .build()),
+
+    PORTFOLIO_ANALYTICS_VOLATILITY(Messages.LabelVolatility, Messages.LabelOptimization, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.Percent2) //
+                                    .with((ds, period) -> withPortfolioAnalytics(data, ds, period,
+                                                    input -> input.analytics.getPortfolioStandardDeviation(input.weights))) //
+                                    .withColoredValues(false) //
+                                    .withBenchmarkDataSeries(false) //
+                                    .with(WidgetFactory::isPortfolioAnalyticsSupportedDataSeries) //
+                                    .build()),
+
+    PORTFOLIO_ANALYTICS_SHARPE(Messages.LabelSharpeRatioAnnualized, Messages.LabelOptimization, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.PercentPlain) //
+                                    .with((ds, period) -> withPortfolioAnalytics(data, ds, period, input -> {
+                                        double riskFreeRate = new ClientProperties(data.getClient())
+                                                        .getRiskFreeRateOfReturn();
+                                        return input.analytics.getPortfolioSharpeRatio(input.weights, riskFreeRate);
+                                    })) //
+                                    .withColoredValues(false) //
+                                    .withBenchmarkDataSeries(false) //
+                                    .with(WidgetFactory::isPortfolioAnalyticsSupportedDataSeries) //
+                                    .build()),
+
+    PORTFOLIO_ANALYTICS_VALUE_AT_RISK(Messages.LabelValueAtRisk, Messages.LabelOptimization, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.Percent2) //
+                                    .with((ds, period) -> withPortfolioAnalytics(data, ds, period,
+                                                    input -> input.analytics.getParametricVaR(input.weights, 1.645))) //
+                                    .withColoredValues(false) //
+                                    .withBenchmarkDataSeries(false) //
+                                    .with(WidgetFactory::isPortfolioAnalyticsSupportedDataSeries) //
+                                    .build()),
+
+    PORTFOLIO_ANALYTICS_DIVERSIFICATION(Messages.LabelDiversificationRatio, Messages.LabelOptimization, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.PercentPlain) //
+                                    .with((ds, period) -> withPortfolioAnalytics(data, ds, period,
+                                                    input -> input.analytics.getDiversificationRatio(input.weights))) //
+                                    .withColoredValues(false) //
+                                    .withBenchmarkDataSeries(false) //
+                                    .with(WidgetFactory::isPortfolioAnalyticsSupportedDataSeries) //
+                                    .build()),
+
+    PORTFOLIO_ANALYTICS_CONCENTRATION(Messages.LabelConcentrationIndex, Messages.LabelOptimization, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.PercentPlain) //
+                                    .with((ds, period) -> withPortfolioAnalytics(data, ds, period,
+                                                    input -> input.analytics.getConcentrationIndex(input.weights))) //
+                                    .withColoredValues(false) //
+                                    .withBenchmarkDataSeries(false) //
+                                    .with(WidgetFactory::isPortfolioAnalyticsSupportedDataSeries) //
+                                    .build()),
+
+    PORTFOLIO_ANALYTICS_RISK_CONTRIBUTION_CHART(Messages.LabelRiskContributionChart, Messages.LabelOptimization,
+                    Images.VIEW_DONUT,
+                    config -> config.put(Dashboard.Config.HEIGHT.name(), "560"), 
+                    PortfolioRiskContributionChartWidget::new);
 
     private String label;
     private String group;
@@ -613,5 +797,115 @@ public enum WidgetFactory
             defaultConfigFunction.accept(widget.getConfiguration());
 
         return widget;
+    }
+
+    public boolean isOptimizationWidget()
+    {
+        return switch (this)
+        {
+            case PORTFOLIO_ANALYTICS_EXPECTED_RETURN,
+                            PORTFOLIO_ANALYTICS_VOLATILITY,
+                            PORTFOLIO_ANALYTICS_SHARPE,
+                            PORTFOLIO_ANALYTICS_VALUE_AT_RISK,
+                            PORTFOLIO_ANALYTICS_DIVERSIFICATION,
+                            PORTFOLIO_ANALYTICS_CONCENTRATION,
+                            PORTFOLIO_ANALYTICS_RISK_CONTRIBUTION_CHART -> true;
+            default -> false;
+        };
+    }
+
+    private record PortfolioAnalyticsInput(PortfolioAnalytics analytics, double[] weights)
+    {
+    }
+
+    private static boolean isPortfolioAnalyticsSupportedDataSeries(DataSeries series)
+    {
+        return switch (series.getType())
+        {
+            case CLIENT, CLIENT_PRETAX, SECURITY, PORTFOLIO, PORTFOLIO_PRETAX, PORTFOLIO_PLUS_ACCOUNT,
+                            PORTFOLIO_PLUS_ACCOUNT_PRETAX -> true;
+            default -> false;
+        };
+    }
+
+    private static double withPortfolioAnalytics(DashboardData data, DataSeries dataSeries, name.abuchen.portfolio.util.Interval period,
+                    java.util.function.Function<PortfolioAnalyticsInput, Double> metric)
+    {
+        PortfolioAnalyticsInput input = buildPortfolioAnalyticsInput(data, dataSeries, period);
+        if (input == null)
+            return Double.NaN;
+
+        return metric.apply(input);
+    }
+
+    private static PortfolioAnalyticsInput buildPortfolioAnalyticsInput(DashboardData data, DataSeries dataSeries,
+                    name.abuchen.portfolio.util.Interval period)
+    {
+        List<Security> candidates = collectCandidateSecurities(data, dataSeries);
+        if (candidates.isEmpty())
+            return null;
+
+        List<PerformanceIndex> indices = new ArrayList<>();
+        List<Long> marketValues = new ArrayList<>();
+
+        for (Security security : candidates)
+        {
+            PerformanceIndex index = name.abuchen.portfolio.snapshot.PerformanceIndex.forInvestment(data.getClient(),
+                            data.getCurrencyConverter(), security, period, new ArrayList<>());
+
+            long[] totals = index.getTotals();
+            double[] deltas = index.getDeltaPercentage();
+
+            if (totals == null || totals.length == 0 || deltas == null || deltas.length < 2)
+                continue;
+
+            long marketValue = totals[totals.length - 1];
+            if (marketValue <= 0)
+                continue;
+
+            indices.add(index);
+            marketValues.add(marketValue);
+        }
+
+        if (indices.size() < 2)
+            return null;
+
+        double total = marketValues.stream().mapToDouble(Long::doubleValue).sum();
+        if (total <= 0)
+            return null;
+
+        double[] weights = new double[marketValues.size()];
+        for (int index = 0; index < marketValues.size(); index++)
+            weights[index] = marketValues.get(index) / total;
+
+        Covariance covariance = new Covariance(indices);
+        covariance.calculate();
+
+        return new PortfolioAnalyticsInput(new PortfolioAnalytics(covariance, indices), weights);
+    }
+
+    private static List<Security> collectCandidateSecurities(DashboardData data, DataSeries dataSeries)
+    {
+        Set<Security> securities = new HashSet<>();
+
+        if (dataSeries.getType() == DataSeries.Type.SECURITY)
+        {
+            securities.add((Security) dataSeries.getInstance());
+        }
+        else if (dataSeries.getType() == DataSeries.Type.PORTFOLIO
+                        || dataSeries.getType() == DataSeries.Type.PORTFOLIO_PRETAX
+                        || dataSeries.getType() == DataSeries.Type.PORTFOLIO_PLUS_ACCOUNT
+                        || dataSeries.getType() == DataSeries.Type.PORTFOLIO_PLUS_ACCOUNT_PRETAX)
+        {
+            Portfolio portfolio = (Portfolio) dataSeries.getInstance();
+            portfolio.getTransactions().stream().map(t -> t.getSecurity()).filter(java.util.Objects::nonNull)
+                            .forEach(securities::add);
+        }
+        else
+        {
+            securities.addAll(data.getClient().getSecurities());
+        }
+
+        return new ArrayList<>(securities);
     }
 }

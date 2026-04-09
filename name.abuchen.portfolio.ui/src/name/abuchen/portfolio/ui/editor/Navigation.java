@@ -56,6 +56,7 @@ import name.abuchen.portfolio.ui.views.StatementOfAssetsHistoryView;
 import name.abuchen.portfolio.ui.views.StatementOfAssetsView;
 import name.abuchen.portfolio.ui.views.currency.CurrencyView;
 import name.abuchen.portfolio.ui.views.dashboard.DashboardView;
+import name.abuchen.portfolio.ui.views.dashboard.PortfolioMetricsView;
 import name.abuchen.portfolio.ui.views.holdings.HoldingsPieChartView;
 import name.abuchen.portfolio.ui.views.payments.PaymentsView;
 import name.abuchen.portfolio.ui.views.settings.SettingsView;
@@ -215,6 +216,7 @@ public final class Navigation
         createGeneralDataSection(client);
         createMasterDataSection();
         createPerformanceSection();
+        createOptimizationSection();
         createTaxonomyDataSection(client);
         createMiscSection();
     }
@@ -503,6 +505,14 @@ public final class Navigation
         performance.add(new Item(Messages.LabelSecurities, SecuritiesPerformanceView.class));
         performance.add(new Item(Messages.LabelPayments, PaymentsView.class, true));
         performance.add(new Item(Messages.LabelTrades, TradeDetailsView.class));
+    }
+
+    private void createOptimizationSection()
+    {
+        Item section = new Item(Messages.LabelOptimization);
+        roots.add(section);
+
+        section.add(new Item(Messages.LabelPortfolioMetrics, PortfolioMetricsView.class, true));
     }
 
     private void createTaxonomyDataSection(Client client)

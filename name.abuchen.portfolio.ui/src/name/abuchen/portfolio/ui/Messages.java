@@ -85,6 +85,8 @@ public class Messages extends NLS
     public static String ClientEditorLabelReports;
     public static String ClientEditorLabelReturnsVolatility;
     public static String ClientEditorPerformanceCalculation;
+    public static String LabelOptimization;
+    public static String LabelPortfolioMetrics;
     public static String CmdCreateNewTaxonomy;
     public static String CmdDoNotImport;
     public static String CmdLogin;
@@ -580,6 +582,7 @@ public class Messages extends NLS
     public static String LabelBenchmarks;
     public static String LabelBiggerSize;
     public static String LabelBlueGrayOrange;
+    public static String LabelCalmarRatio;
     public static String LabelCapitalGains;
     public static String LabelCapitalGainsMethod;
     public static String LabelCategoryOtherMovements;
@@ -651,6 +654,7 @@ public class Messages extends NLS
     public static String LabelColumnsInReverseOrder;
     public static String LabelCommon;
     public static String LabelCompleted;
+    public static String LabelConcentrationIndex;
     public static String LabelConfigureSharpeRatioRisklessIRR;
     public static String LabelConsumerPriceIndex;
     public static String LabelConvertBuySellIntoDeliveryTransactions;
@@ -675,6 +679,8 @@ public class Messages extends NLS
     public static String LabelDefaultReferenceAccountName;
     public static String LabelDelta;
     public static String LabelDescription;
+    public static String LabelDiversificationRatio;
+    public static String LabelDownsideRisk;
     public static String LabelDividendPerShare;
     public static String LabelDividends;
     public static String LabelDoImport;
@@ -693,16 +699,19 @@ public class Messages extends NLS
     public static String LabelEmptyTaxonomy;
     public static String LabelError;
     public static String LabelErrorNoHoldings;
+    public static String LabelErrorNoRiskContributionData;
     public static String LabelErrorNoTaxonomySelected;
     public static String LabelErrorProtocolDetails;
     public static String LabelEurostatRegion;
     public static String LabelExcessReturnBaselineDataSeries;
+    public static String LabelExcessKurtosis;
     public static String LabelExcessReturnOperator;
     public static String LabelExcessReturnOperatorAlpha;
     public static String LabelExcessReturnOperatorRelative;
     public static String LabelExchange;
     public static String LabelExchangeRate;
     public static String LabelExchangeRates;
+    public static String LabelExpectedReturnAnnualized;
     public static String LabelExpand;
     public static String LabelExpandAll;
     public static String LabelExpandCurrentMonth;
@@ -737,6 +746,7 @@ public class Messages extends NLS
     public static String LabelIncludeSecuritiesInPieChart;
     public static String LabelIncludeUnassignedCategoryInCharts;
     public static String LabelInfo;
+    public static String LabelInformationRatio;
     public static String LabelInProgress;
     public static String LabelInputValidationFailed;
     public static String LabelInstallationDetails;
@@ -874,6 +884,7 @@ public class Messages extends NLS
     public static String LabelReportingPeriod;
     public static String LabelReportingPeriodEditTooltip;
     public static String LabelReportInterval;
+    public static String LabelRiskContributionChart;
     public static String LabelRiskIndicators;
     public static String LabelRiskMetric;
     public static String LabelSaleTransactionsOnly;
@@ -895,6 +906,7 @@ public class Messages extends NLS
     public static String LabelSelectYearSince;
     public static String LabelSemiVolatility;
     public static String LabelSettings;
+    public static String LabelSharpeRatioAnnualized;
     public static String LabelSharpeRatio;
     public static String LabelShowAverage;
     public static String LabelShowEventsStarting;
@@ -902,6 +914,8 @@ public class Messages extends NLS
     public static String LabelShowOnlyOneYear;
     public static String LabelShowRawResponse;
     public static String LabelSmallerSize;
+    public static String LabelSkewness;
+    public static String LabelSortinoRatio;
     public static String LabelStartTyping;
     public static String LabelStatementOfAssets;
     public static String LabelStatementOfAssetsDerivedDataSeries;
@@ -917,6 +931,8 @@ public class Messages extends NLS
     public static String LabelTemplate;
     public static String LabelTheme;
     public static String LabelToday;
+    public static String LabelTrackingErrorAnnualized;
+    public static String LabelTrackingErrorDaily;
     public static String LabelToolTipDividendDetails;
     public static String LabelToolTipDividendDetailsGross;
     public static String LabelToolTipInvestmentDetails;
@@ -972,6 +988,7 @@ public class Messages extends NLS
     public static String LabelXDays;
     public static String LabelYear;
     public static String LabelYearlyHeatmap;
+    public static String LabelValueAtRisk;
     public static String LabelYellowWhiteBlack;
     public static String LabelYes;
     public static String LabelYTD;

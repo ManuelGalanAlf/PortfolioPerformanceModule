@@ -8,6 +8,7 @@ import name.abuchen.portfolio.model.Dashboard.Widget;
 import name.abuchen.portfolio.money.Values;
 import name.abuchen.portfolio.snapshot.PerformanceIndex;
 import name.abuchen.portfolio.ui.Messages;
+import name.abuchen.portfolio.ui.util.ValueColorScheme;
 import name.abuchen.portfolio.util.Interval;
 
 public class BenchmarkMetricWidget extends AbstractIndicatorWidget<Double>
@@ -65,8 +66,17 @@ public class BenchmarkMetricWidget extends AbstractIndicatorWidget<Double>
         }
 
         if (metricType == MetricType.INFORMATION_RATIO)
+        {
             indicator.setText(Values.PercentPlain.format(value));
+            // Positive IR = portfolio outperforms benchmark = green
+            indicator.setTextColor(value < 0 //
+                            ? ValueColorScheme.current().negativeForeground() //
+                            : ValueColorScheme.current().positiveForeground());
+        }
         else
+        {
+            // Tracking Error is always positive — no semantic color
             indicator.setText(Values.Percent2.format(value));
+        }
     }
 }

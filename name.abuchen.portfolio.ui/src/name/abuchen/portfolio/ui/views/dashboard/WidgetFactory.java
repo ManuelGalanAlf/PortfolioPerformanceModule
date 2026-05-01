@@ -326,7 +326,7 @@ public enum WidgetFactory
     SHARPE_RATIO_ANNUALIZED(Messages.LabelSharpeRatioAnnualized, Messages.LabelRiskIndicators, //
                     (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
                                     .with(Values.PercentPlain) //
-                                    .withColoredValues(false) //
+                                    .withColoredValues(true) //
                                     .withConfig(delegate -> new RiskFreeRateOfReturnConfig(delegate)) //
                                     .with((ds, period) -> {
                                         PerformanceIndex index = data.calculate(ds, period);
@@ -355,7 +355,7 @@ public enum WidgetFactory
     SORTINO_RATIO(Messages.LabelSortinoRatio, Messages.LabelRiskIndicators, //
                     (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
                                     .with(Values.PercentPlain) //
-                                    .withColoredValues(false) //
+                                    .withColoredValues(true) //
                                     .withConfig(delegate -> new RiskFreeRateOfReturnConfig(delegate)) //
                                     .with((ds, period) -> {
                                         PerformanceIndex index = data.calculate(ds, period);
@@ -367,7 +367,7 @@ public enum WidgetFactory
     CALMAR_RATIO(Messages.LabelCalmarRatio, Messages.LabelRiskIndicators, //
                     (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
                                     .with(Values.PercentPlain) //
-                                    .withColoredValues(false) //
+                                    .withColoredValues(true) //
                                     .with((ds, period) -> {
                                         PerformanceIndex index = data.calculate(ds, period);
                                         return AdvancedRiskMetrics.calmarRatio(index);
@@ -399,7 +399,7 @@ public enum WidgetFactory
     SKEWNESS(Messages.LabelSkewness, Messages.LabelRiskIndicators, //
                     (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
                                     .with(Values.PercentPlain) //
-                                    .withColoredValues(false) //
+                                    .withColoredValues(true) //
                                     .with((ds, period) -> {
                                         PerformanceIndex index = data.calculate(ds, period);
                                         return AdvancedRiskMetrics.skewness(index);
@@ -670,7 +670,7 @@ public enum WidgetFactory
                                     .with((ds, period) -> withPortfolioAnalytics(data, ds, period,
                                                     input -> input.analytics.getPortfolioExpectedReturn(input.weights)
                                                                     * name.abuchen.portfolio.math.FinancialConstants.US_TRADING_DAYS_PER_YEAR)) //
-                                    .withColoredValues(false) //
+                                    .withColoredValues(true) //
                                     .withBenchmarkDataSeries(false) //
                                     .with(WidgetFactory::isPortfolioAnalyticsSupportedDataSeries) //
                                     .build()),
@@ -693,7 +693,7 @@ public enum WidgetFactory
                                                         .getRiskFreeRateOfReturn();
                                         return input.analytics.getPortfolioSharpeRatio(input.weights, riskFreeRate);
                                     })) //
-                                    .withColoredValues(false) //
+                                    .withColoredValues(true) //
                                     .withBenchmarkDataSeries(false) //
                                     .with(WidgetFactory::isPortfolioAnalyticsSupportedDataSeries) //
                                     .build()),

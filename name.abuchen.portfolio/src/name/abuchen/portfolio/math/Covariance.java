@@ -248,7 +248,7 @@ public class Covariance
     }
 
     /**
-     * Returns the annualized covariance value between two assets.
+     * Returns the covariance value between two assets.
      *
      * @param row
      *                first asset index

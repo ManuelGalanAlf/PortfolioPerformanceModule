@@ -329,8 +329,7 @@ public final class AdvancedRiskMetrics
      * <p>
      * Formula: E(R) = Σ(Ri) / N
      * <p>
-     * This value is used by the Markowitz Optimizer as the expected return
-     * input for each asset. It represents the historical average daily return
+     * It represents the historical average daily return
      * of the portfolio or security.
      *
      * @param index

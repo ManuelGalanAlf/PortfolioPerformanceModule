@@ -15,9 +15,8 @@ public class BenchmarkMetricWidget extends AbstractIndicatorWidget<Double>
 {
     public enum MetricType
     {
-        TRACKING_ERROR_DAILY,
         TRACKING_ERROR_ANNUALIZED,
-        INFORMATION_RATIO
+        INFORMATION_RATIO_ANNUALIZED
     }
 
     private final MetricType metricType;
@@ -47,9 +46,9 @@ public class BenchmarkMetricWidget extends AbstractIndicatorWidget<Double>
 
             return switch (metricType)
             {
-                case TRACKING_ERROR_DAILY -> AdvancedRiskMetrics.trackingError(portfolio, benchmark);
                 case TRACKING_ERROR_ANNUALIZED -> AdvancedRiskMetrics.annualizedTrackingError(portfolio, benchmark);
-                case INFORMATION_RATIO -> AdvancedRiskMetrics.informationRatio(portfolio, benchmark);
+                case INFORMATION_RATIO_ANNUALIZED -> AdvancedRiskMetrics.annualizedInformationRatio(portfolio,
+                                benchmark);
             };
         };
     }
@@ -65,7 +64,7 @@ public class BenchmarkMetricWidget extends AbstractIndicatorWidget<Double>
             return;
         }
 
-        if (metricType == MetricType.INFORMATION_RATIO)
+        if (metricType == MetricType.INFORMATION_RATIO_ANNUALIZED)
         {
             indicator.setText(Values.PercentPlain.format(value));
             // Positive IR = portfolio outperforms benchmark = green

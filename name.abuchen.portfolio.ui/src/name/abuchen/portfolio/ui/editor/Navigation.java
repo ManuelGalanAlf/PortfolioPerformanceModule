@@ -57,6 +57,7 @@ import name.abuchen.portfolio.ui.views.StatementOfAssetsView;
 import name.abuchen.portfolio.ui.views.currency.CurrencyView;
 import name.abuchen.portfolio.ui.views.dashboard.DashboardView;
 import name.abuchen.portfolio.ui.views.dashboard.PortfolioMetricsView;
+import name.abuchen.portfolio.ui.views.SmartRebalancerView;
 import name.abuchen.portfolio.ui.views.holdings.HoldingsPieChartView;
 import name.abuchen.portfolio.ui.views.payments.PaymentsView;
 import name.abuchen.portfolio.ui.views.settings.SettingsView;
@@ -513,6 +514,7 @@ public final class Navigation
         roots.add(section);
 
         section.add(new Item(Messages.LabelPortfolioMetrics, PortfolioMetricsView.class, true));
+        section.add(new Item(Messages.LabelSmartRebalancer, SmartRebalancerView.class, true));
     }
 
     private void createTaxonomyDataSection(Client client)

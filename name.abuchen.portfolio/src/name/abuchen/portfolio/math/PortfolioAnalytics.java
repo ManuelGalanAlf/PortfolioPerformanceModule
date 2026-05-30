@@ -15,12 +15,7 @@ import name.abuchen.portfolio.snapshot.PerformanceIndex;
  */
 public class PortfolioAnalytics
 {
-    /**
-     * Trading days per year for the US market (NYSE/Nasdaq convention).
-     */
-    @Deprecated
-    public static final int TRADING_DAYS_PER_YEAR = FinancialConstants.US_TRADING_DAYS_PER_YEAR;
-
+    
     private final Covariance covariance;
     private final List<PerformanceIndex> assets;
 
@@ -39,7 +34,7 @@ public class PortfolioAnalytics
      * @param weights array of weights
      * @return the portfolio standard deviation
      */
-    public double getPortfolioStandardDeviation(double[] weights)
+    public double getPortfolioStandardDeviationAnnualized(double[] weights)
     {
         double variance = covariance.getPortfolioVariance(weights);
         return Double.isNaN(variance) || variance < 0.0 ? Double.NaN : Math.sqrt(variance);
@@ -49,32 +44,32 @@ public class PortfolioAnalytics
      * Calculates the expected return (weighted average) of a simulated
      * portfolio.
      * <p>
-     * Returns the daily expected return. 
+     * Returns the daily expected return.
      * 
      * @param weights
-     *                    array of portfolio weights (must sum up to 1.0)
-     * @return theoretical daily expected return, or {@link Double#NaN} if data
-     *         is missing
+     *            array of portfolio weights (must sum up to 1.0)
+     * @return theoretical annualized expected return, or {@link Double#NaN} if
+     *         data is missing
      */
-    public double getPortfolioExpectedReturn(double[] weights)
+    public double getPortfolioExpectedReturnAnnualized(double[] weights)
     {
         if (weights == null || weights.length != assets.size())
             return Double.NaN;
 
-        double expectedReturn = 0.0;
+        double expectedReturnAnnualized = 0.0;
         for (int i = 0; i < assets.size(); i++)
         {
             PerformanceIndex asset = assets.get(i);
             if (asset == null)
                 return Double.NaN;
 
-            double assetER = AdvancedRiskMetrics.expectedReturn(asset);
-            if (Double.isNaN(assetER))
+            double assetAnnualizedER = AdvancedRiskMetrics.annualizedExpectedReturn(asset);
+            if (Double.isNaN(assetAnnualizedER))
                 return Double.NaN;
 
-            expectedReturn += weights[i] * assetER;
+            expectedReturnAnnualized += weights[i] * assetAnnualizedER;
         }
-        return expectedReturn;
+        return expectedReturnAnnualized;
     }
 
     /**
@@ -89,13 +84,13 @@ public class PortfolioAnalytics
      *                         annualized Risk-Free Rate (e.g., 0.02 for 2%)
      * @return theoretical Sharpe Ratio
      */
-    public double getPortfolioSharpeRatio(double[] weights, double riskFreeRate)
+    public double getPortfolioSharpeRatioAnnualized(double[] weights, double riskFreeRate)
     {
-        double portfolioVolatility = getPortfolioStandardDeviation(weights);
+        double portfolioVolatility = getPortfolioStandardDeviationAnnualized(weights);
         if (Double.isNaN(portfolioVolatility) || portfolioVolatility == 0.0)
             return Double.NaN;
 
-        double annualizedExpectedReturn = getPortfolioExpectedReturn(weights) * (double) FinancialConstants.US_TRADING_DAYS_PER_YEAR;
+        double annualizedExpectedReturn = getPortfolioExpectedReturnAnnualized(weights);
         return (annualizedExpectedReturn - riskFreeRate) / portfolioVolatility;
     }
 
@@ -113,13 +108,13 @@ public class PortfolioAnalytics
      * @return maximum probable annualized loss expressed as a positive decimal
      *         (e.g., 0.15 = 15%)
      */
-    public double getParametricVaR(double[] weights, double zScore)
+    public double getParametricVaRAnnualized(double[] weights, double zScore)
     {
-        double portfolioVolatility = getPortfolioStandardDeviation(weights);
+        double portfolioVolatility = getPortfolioStandardDeviationAnnualized(weights);
         if (Double.isNaN(portfolioVolatility))
             return Double.NaN;
 
-        double annualizedExpectedReturn = getPortfolioExpectedReturn(weights) * (double) FinancialConstants.US_TRADING_DAYS_PER_YEAR;
+        double annualizedExpectedReturn = getPortfolioExpectedReturnAnnualized(weights);
         return (zScore * portfolioVolatility) - annualizedExpectedReturn;
     }
 
@@ -139,7 +134,7 @@ public class PortfolioAnalytics
         if (weights == null || weights.length != assets.size())
             return Double.NaN;
 
-        double portfolioVolatility = getPortfolioStandardDeviation(weights);
+        double portfolioVolatility = getPortfolioStandardDeviationAnnualized(weights);
         if (Double.isNaN(portfolioVolatility) || portfolioVolatility == 0.0)
             return Double.NaN;
 
@@ -154,8 +149,7 @@ public class PortfolioAnalytics
             if (delta == null)
                 return Double.NaN;
 
-            double individualVola = AdvancedRiskMetrics.standardDeviation(delta)
-                            * Math.sqrt(FinancialConstants.US_TRADING_DAYS_PER_YEAR);
+            double individualVola = AdvancedRiskMetrics.annualizedStandardDeviation(delta);
             if (Double.isNaN(individualVola))
                 return Double.NaN;
 
@@ -210,7 +204,7 @@ public class PortfolioAnalytics
             return new double[0];
 
         // Obtain the portfolio volatility
-        double portfolioVolatility = getPortfolioStandardDeviation(weights);
+        double portfolioVolatility = getPortfolioStandardDeviationAnnualized(weights);
         if (Double.isNaN(portfolioVolatility) || portfolioVolatility == 0.0)
             return new double[dimension];
 
@@ -245,7 +239,7 @@ public class PortfolioAnalytics
     public double[] getRiskContributionsPercentage(double[] weights)
     {
         double[] absoluteContributions = getRiskContributions(weights);
-        double portfolioVol = getPortfolioStandardDeviation(weights);
+        double portfolioVol = getPortfolioStandardDeviationAnnualized(weights);
 
         if (portfolioVol <= 0 || Double.isNaN(portfolioVol))
             return new double[absoluteContributions.length];

@@ -98,11 +98,7 @@ public enum WidgetFactory
                                     .with(Values.AnnualizedPercent2) //
                                     .with((ds, period) -> {
                                         PerformanceIndex index = data.calculate(ds, period);
-                                        double expected = AdvancedRiskMetrics.expectedReturn(index);
-                                        if (Double.isNaN(expected))
-                                            return Double.NaN;
-
-                                        return expected * name.abuchen.portfolio.math.FinancialConstants.US_TRADING_DAYS_PER_YEAR;
+                                        return AdvancedRiskMetrics.annualizedExpectedReturn(index);
                                     }) //
                                     .withColoredValues(false)//
                                     .build()),
@@ -331,28 +327,34 @@ public enum WidgetFactory
                                     .with((ds, period) -> {
                                         PerformanceIndex index = data.calculate(ds, period);
                                         double rf = new ClientProperties(data.getClient()).getRiskFreeRateOfReturn();
-                                        return AdvancedRiskMetrics.sharpeRatio(index, rf);
+                                        return AdvancedRiskMetrics.annualizedSharpeRatio(index, rf);
                                     }) //
                                     .withTooltip((ds, period) -> Messages.TooltipSharpeRatio)//
                                     .build()),
+    VOLATILITY_ANNUALIZED(Messages.LabelVolatilityAnnualized, Messages.LabelRiskIndicators, //
+                    (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
+                                    .with(Values.Percent2) //
+                                    .with((ds, period) -> {
+                                        PerformanceIndex index = data.calculate(ds, period);
+                                        double[] delta = index.getDeltaPercentage();
+                                        return AdvancedRiskMetrics.annualizedStandardDeviation(delta);
+                                    }) //
+                                    .withTooltip((ds, period) -> Messages.TooltipVolatilityAnnualized)//
+                                    .withColoredValues(false)//
+                                    .build()),
 
-    DOWNSIDE_RISK(Messages.LabelDownsideRisk, Messages.LabelRiskIndicators, //
+    DOWNSIDE_RISK_ANNUALIZED(Messages.LabelDownsideRiskAnnualized, Messages.LabelRiskIndicators, //
                     (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
                                     .with(Values.Percent2) //
                                     .withColoredValues(false) //
                                     .with((ds, period) -> {
                                         PerformanceIndex index = data.calculate(ds, period);
                                         double[] delta = index.getDeltaPercentage();
-                                        if (delta == null || delta.length < 2)
-                                            return Double.NaN;
-
-                                        double downsideRisk = AdvancedRiskMetrics.downsideRisk(delta, 0.0);
-                                        return downsideRisk
-                                                        * Math.sqrt(name.abuchen.portfolio.math.FinancialConstants.US_TRADING_DAYS_PER_YEAR);
+                                        return AdvancedRiskMetrics.annualizedDownsideRisk(delta, 0.0);
                                     }) //
                                     .build()),
 
-    SORTINO_RATIO(Messages.LabelSortinoRatio, Messages.LabelRiskIndicators, //
+    SORTINO_RATIO_ANNUALIZED(Messages.LabelSortinoRatioAnnualized, Messages.LabelRiskIndicators, //
                     (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
                                     .with(Values.PercentPlain) //
                                     .withColoredValues(true) //
@@ -360,27 +362,27 @@ public enum WidgetFactory
                                     .with((ds, period) -> {
                                         PerformanceIndex index = data.calculate(ds, period);
                                         double rf = new ClientProperties(data.getClient()).getRiskFreeRateOfReturn();
-                                        return AdvancedRiskMetrics.sortinoRatio(index, rf);
+                                        return AdvancedRiskMetrics.annualizedSortinoRatio(index, rf);
                                     }) //
                                     .build()),
 
-    CALMAR_RATIO(Messages.LabelCalmarRatio, Messages.LabelRiskIndicators, //
+    CALMAR_RATIO_ANNUALIZED(Messages.LabelCalmarRatioAnnualized, Messages.LabelRiskIndicators, //
                     (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
                                     .with(Values.PercentPlain) //
                                     .withColoredValues(true) //
                                     .with((ds, period) -> {
                                         PerformanceIndex index = data.calculate(ds, period);
-                                        return AdvancedRiskMetrics.calmarRatio(index);
+                                        return AdvancedRiskMetrics.annualizedCalmarRatio(index);
                                     }) //
                                     .build()),
 
-    VALUE_AT_RISK(Messages.LabelValueAtRisk, Messages.LabelRiskIndicators, //
+    VALUE_AT_RISK_ANNUALIZED(Messages.LabelValueAtRiskAnnualized, Messages.LabelRiskIndicators, //
                     (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
                                     .with(Values.Percent2) //
                                     .withColoredValues(false) //
                                     .with((ds, period) -> {
                                         PerformanceIndex index = data.calculate(ds, period);
-                                        return AdvancedRiskMetrics.valueAtRisk(index, 0.95);
+                                        return AdvancedRiskMetrics.annualizedValueAtRisk(index, 0.95);
                                     }) //
                                     .build()),
 
@@ -388,13 +390,9 @@ public enum WidgetFactory
                     (widget, data) -> new BenchmarkMetricWidget(widget, data,
                                     BenchmarkMetricWidget.MetricType.TRACKING_ERROR_ANNUALIZED)),
 
-    TRACKING_ERROR_DAILY(Messages.LabelTrackingErrorDaily, Messages.LabelRiskIndicators,
+    INFORMATION_RATIO_ANNUALIZED(Messages.LabelInformationRatio, Messages.LabelRiskIndicators,
                     (widget, data) -> new BenchmarkMetricWidget(widget, data,
-                                    BenchmarkMetricWidget.MetricType.TRACKING_ERROR_DAILY)),
-
-    INFORMATION_RATIO(Messages.LabelInformationRatio, Messages.LabelRiskIndicators,
-                    (widget, data) -> new BenchmarkMetricWidget(widget, data,
-                                    BenchmarkMetricWidget.MetricType.INFORMATION_RATIO)),
+                                    BenchmarkMetricWidget.MetricType.INFORMATION_RATIO_ANNUALIZED)),
 
     SKEWNESS(Messages.LabelSkewness, Messages.LabelRiskIndicators, //
                     (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
@@ -664,45 +662,45 @@ public enum WidgetFactory
                                     .build()),
 
     // Portfolio Analytics widgets used by the dedicated optimization view.
-    PORTFOLIO_ANALYTICS_EXPECTED_RETURN(Messages.LabelExpectedReturnAnnualized, Messages.LabelOptimization, //
+    PORTFOLIO_ANALYTICS_EXPECTED_RETURN_ANNUALIZED(Messages.LabelExpectedReturnAnnualized, Messages.LabelOptimization, //
                     (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
                                     .with(Values.AnnualizedPercent2) //
                                     .with((ds, period) -> withPortfolioAnalytics(data, ds, period,
-                                                    input -> input.analytics.getPortfolioExpectedReturn(input.weights)
-                                                                    * name.abuchen.portfolio.math.FinancialConstants.US_TRADING_DAYS_PER_YEAR)) //
+                                                    input -> input.analytics.getPortfolioExpectedReturnAnnualized(input.weights))) // ⬅️ Delegación pura y limpia
                                     .withColoredValues(true) //
                                     .withBenchmarkDataSeries(false) //
                                     .with(WidgetFactory::isPortfolioAnalyticsSupportedDataSeries) //
                                     .build()),
 
-    PORTFOLIO_ANALYTICS_VOLATILITY(Messages.LabelVolatility, Messages.LabelOptimization, //
+    PORTFOLIO_ANALYTICS_VOLATILITY_ANNUALIZED(Messages.LabelVolatilityAnnualized, Messages.LabelOptimization, //
                     (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
                                     .with(Values.Percent2) //
                                     .with((ds, period) -> withPortfolioAnalytics(data, ds, period,
-                                                    input -> input.analytics.getPortfolioStandardDeviation(input.weights))) //
+                                                    input -> input.analytics.getPortfolioStandardDeviationAnnualized(
+                                                                    input.weights)))//
                                     .withColoredValues(false) //
                                     .withBenchmarkDataSeries(false) //
                                     .with(WidgetFactory::isPortfolioAnalyticsSupportedDataSeries) //
                                     .build()),
 
-    PORTFOLIO_ANALYTICS_SHARPE(Messages.LabelSharpeRatioAnnualized, Messages.LabelOptimization, //
+    PORTFOLIO_ANALYTICS_SHARPE_ANNUALIZED(Messages.LabelSharpeRatioAnnualized, Messages.LabelOptimization, //
                     (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
                                     .with(Values.PercentPlain) //
                                     .with((ds, period) -> withPortfolioAnalytics(data, ds, period, input -> {
                                         double riskFreeRate = new ClientProperties(data.getClient())
                                                         .getRiskFreeRateOfReturn();
-                                        return input.analytics.getPortfolioSharpeRatio(input.weights, riskFreeRate);
+                                        return input.analytics.getPortfolioSharpeRatioAnnualized(input.weights, riskFreeRate);
                                     })) //
                                     .withColoredValues(true) //
                                     .withBenchmarkDataSeries(false) //
                                     .with(WidgetFactory::isPortfolioAnalyticsSupportedDataSeries) //
                                     .build()),
 
-    PORTFOLIO_ANALYTICS_VALUE_AT_RISK(Messages.LabelValueAtRisk, Messages.LabelOptimization, //
+    PORTFOLIO_ANALYTICS_VALUE_AT_RISK_ANNUALIZED(Messages.LabelValueAtRiskAnnualized, Messages.LabelOptimization, //
                     (widget, data) -> IndicatorWidget.<Double>create(widget, data) //
                                     .with(Values.Percent2) //
                                     .with((ds, period) -> withPortfolioAnalytics(data, ds, period,
-                                                    input -> input.analytics.getParametricVaR(input.weights, 1.645))) //
+                                                    input -> input.analytics.getParametricVaRAnnualized(input.weights, 1.645))) //
                                     .withColoredValues(false) //
                                     .withBenchmarkDataSeries(false) //
                                     .with(WidgetFactory::isPortfolioAnalyticsSupportedDataSeries) //
@@ -803,10 +801,10 @@ public enum WidgetFactory
     {
         return switch (this)
         {
-            case PORTFOLIO_ANALYTICS_EXPECTED_RETURN,
-                            PORTFOLIO_ANALYTICS_VOLATILITY,
-                            PORTFOLIO_ANALYTICS_SHARPE,
-                            PORTFOLIO_ANALYTICS_VALUE_AT_RISK,
+            case PORTFOLIO_ANALYTICS_EXPECTED_RETURN_ANNUALIZED,
+                            PORTFOLIO_ANALYTICS_VOLATILITY_ANNUALIZED,
+                            PORTFOLIO_ANALYTICS_SHARPE_ANNUALIZED,
+                            PORTFOLIO_ANALYTICS_VALUE_AT_RISK_ANNUALIZED,
                             PORTFOLIO_ANALYTICS_DIVERSIFICATION,
                             PORTFOLIO_ANALYTICS_CONCENTRATION,
                             PORTFOLIO_ANALYTICS_RISK_CONTRIBUTION_CHART -> true;

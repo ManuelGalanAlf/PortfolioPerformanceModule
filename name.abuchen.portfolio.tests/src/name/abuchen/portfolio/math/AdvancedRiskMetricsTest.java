@@ -24,20 +24,7 @@ public class AdvancedRiskMetricsTest
     }
 
     @Test
-    public void testDownsideRisk()
-    {
-        double[] returns = { 0.05, -0.03, 0.02, -0.04 };
-        assertThat(AdvancedRiskMetrics.downsideRisk(returns, 0.0), closeTo(0.025, TOLERANCE));
-    }
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testDownsideRiskWithEmptyArray()
-    {
-        AdvancedRiskMetrics.downsideRisk(new double[] {}, 0.0);
-    }
-
-    @Test
-    public void testSharpeRatio()
+    public void testSharpeRatioAnnualized()
     {
         double[] delta = { 0.01, -0.005, 0.02, -0.01 };
         when(index.getDeltaPercentage()).thenReturn(delta);
@@ -45,7 +32,7 @@ public class AdvancedRiskMetricsTest
 
         double expected = (0.10 - 0.02)
                         / (sampleStandardDeviation(delta) * Math.sqrt(FinancialConstants.US_TRADING_DAYS_PER_YEAR));
-        double sharpe = AdvancedRiskMetrics.sharpeRatio(index, 0.02);
+        double sharpe = AdvancedRiskMetrics.annualizedSharpeRatio(index, 0.02);
 
         assertThat(sharpe, closeTo(expected, TOLERANCE));
     }
@@ -55,26 +42,41 @@ public class AdvancedRiskMetricsTest
     {
         when(index.getDeltaPercentage()).thenReturn(new double[] { 0.01, 0.01 });
 
-        assertThat(Double.isNaN(AdvancedRiskMetrics.sharpeRatio(index, 0.02)), is(true));
+        assertThat(Double.isNaN(AdvancedRiskMetrics.annualizedSharpeRatio(index, 0.02)), is(true));
     }
 
     @Test
-    public void testSortinoRatio()
+    public void testSortinoRatioAnnualized()
     {
         double[] delta = { 0.05, -0.02, 0.03, -0.04 };
         when(index.getPerformanceIRR()).thenReturn(0.12);
         when(index.getDeltaPercentage()).thenReturn(delta);
 
         double dailyRf = Math.pow(1.0 + 0.02, 1.0 / FinancialConstants.US_TRADING_DAYS_PER_YEAR) - 1.0;
-        double downsideRisk = AdvancedRiskMetrics.downsideRisk(delta, dailyRf);
-        double expected = (0.12 - 0.02) / (downsideRisk * Math.sqrt(FinancialConstants.US_TRADING_DAYS_PER_YEAR));
 
-        double sortino = AdvancedRiskMetrics.sortinoRatio(index, 0.02);
+        double target = dailyRf;
+        double sum = 0.0;
+        int count = 0;
+        for (double r : delta)
+        {
+            if (r < target)
+            {
+                double diff = r - target;
+                sum += diff * diff;
+            }
+            count++;
+        }
+        double sampleDownsideRiskDaily = Math.sqrt(sum / count);
+
+        double expected = (0.12 - 0.02)
+                        / (sampleDownsideRiskDaily * Math.sqrt(FinancialConstants.US_TRADING_DAYS_PER_YEAR));
+
+        double sortino = AdvancedRiskMetrics.annualizedSortinoRatio(index, 0.02);
         assertThat(sortino, closeTo(expected, TOLERANCE));
     }
 
     @Test
-    public void testCalmarRatio()
+    public void testCalmarRatioAnnualized()
     {
         double[] accumulated = { 0.0, 0.10, -0.01 };
         when(index.getAccumulatedPercentage()).thenReturn(accumulated);
@@ -84,7 +86,7 @@ public class AdvancedRiskMetricsTest
                         java.time.LocalDate.of(2026, 1, 3) });
         when(index.getPerformanceIRR()).thenReturn(0.05);
 
-        double calmar = AdvancedRiskMetrics.calmarRatio(index);
+        double calmar = AdvancedRiskMetrics.annualizedCalmarRatio(index);
         assertThat(calmar, closeTo(0.5, TOLERANCE));
     }
 
@@ -98,51 +100,53 @@ public class AdvancedRiskMetricsTest
                         java.time.LocalDate.of(2026, 1, 2),
                         java.time.LocalDate.of(2026, 1, 3) });
 
-        assertThat(Double.isNaN(AdvancedRiskMetrics.calmarRatio(index)), is(true));
+        assertThat(Double.isNaN(AdvancedRiskMetrics.annualizedCalmarRatio(index)), is(true));
     }
 
     @Test
-    public void testValueAtRisk()
+    public void testAnnualizedValueAtRisk()
     {
         double[] delta = { 0.04, -0.01, 0.02, -0.03, 0, -0.05, 0.01, -0.02, 0.03, -0.04 };
         when(index.getDeltaPercentage()).thenReturn(delta);
 
-        assertThat(AdvancedRiskMetrics.valueAtRisk(index, 0.90), closeTo(0.04, TOLERANCE));
+        double expected = 0.04 * Math.sqrt(FinancialConstants.US_TRADING_DAYS_PER_YEAR);
+        assertThat(AdvancedRiskMetrics.annualizedValueAtRisk(index, 0.90), closeTo(expected, TOLERANCE));
     }
 
     @Test
-    public void testValueAtRiskHighConfidence()
+    public void testAnnualizedValueAtRiskHighConfidence()
     {
         double[] delta = new double[20];
         for (int i = 0; i < 20; i++)
             delta[i] = i * 0.01 - 0.10;
         when(index.getDeltaPercentage()).thenReturn(delta);
 
-        double var95 = AdvancedRiskMetrics.valueAtRisk(index, 0.95);
-        assertThat(var95, closeTo(0.09, TOLERANCE));
+        double var95 = AdvancedRiskMetrics.annualizedValueAtRisk(index, 0.95);
+        double expectedDailyVaR = 0.09;
+        assertThat(var95,
+                        closeTo(expectedDailyVaR * Math.sqrt(FinancialConstants.US_TRADING_DAYS_PER_YEAR), TOLERANCE));
     }
 
     @Test(expected = IllegalArgumentException.class)
-    public void testValueAtRiskWithInvalidConfidence()
+    public void testAnnualizedValueAtRiskWithInvalidConfidence()
     {
-        // Confidence > 1.0 should throw exception
-        AdvancedRiskMetrics.valueAtRisk(index, 1.05);
+        AdvancedRiskMetrics.annualizedValueAtRisk(index, 1.05);
     }
 
     @Test
-    public void testExpectedReturn()
+    public void testAnnualizedExpectedReturn()
     {
         double[] delta = { 0.01, 0.02, -0.03 };
         when(index.getDeltaPercentage()).thenReturn(delta);
 
-        double er = AdvancedRiskMetrics.expectedReturn(index);
+        double er = AdvancedRiskMetrics.annualizedExpectedReturn(index);
         assertThat(er, closeTo(0.0, TOLERANCE));
     }
 
     @Test
-    public void testExpectedReturnWithNull()
+    public void testAnnualizedExpectedReturnWithNull()
     {
-        assertThat(Double.isNaN(AdvancedRiskMetrics.expectedReturn(null)), is(true));
+        assertThat(Double.isNaN(AdvancedRiskMetrics.annualizedExpectedReturn(null)), is(true));
     }
 
     @Test
@@ -201,8 +205,8 @@ public class AdvancedRiskMetricsTest
         when(benchmark.getDeltaPercentage()).thenReturn(bDelta);
 
         double[] diff = { 0.005, 0.005, -0.01 };
-        double expected = sampleStandardDeviation(diff);
-        double te = AdvancedRiskMetrics.trackingError(portfolio, benchmark);
+        double expected = sampleStandardDeviation(diff) * Math.sqrt(FinancialConstants.US_TRADING_DAYS_PER_YEAR);
+        double te = AdvancedRiskMetrics.annualizedTrackingError(portfolio, benchmark);
         assertThat(te, closeTo(expected, TOLERANCE));
     }
 
@@ -215,7 +219,7 @@ public class AdvancedRiskMetricsTest
         when(p.getDeltaPercentage()).thenReturn(new double[] { 0.01, 0.02 });
         when(b.getDeltaPercentage()).thenReturn(new double[] { 0.01 });
 
-        double te = AdvancedRiskMetrics.trackingError(p, b);
+        double te = AdvancedRiskMetrics.annualizedTrackingError(p, b);
         assertThat(Double.isNaN(te), is(true));
     }
 
@@ -225,15 +229,14 @@ public class AdvancedRiskMetricsTest
         double[] delta = { 0.01, -0.01, 0.02, -0.02 };
         when(index.getDeltaPercentage()).thenReturn(delta);
 
-        // TE against self must be 0
-        double te = AdvancedRiskMetrics.trackingError(index, index);
+        double te = AdvancedRiskMetrics.annualizedTrackingError(index, index);
         assertThat(te, closeTo(0.0, TOLERANCE));
     }
 
     @Test
     public void testNullInputsTrackingError()
     {
-        assertThat(Double.isNaN(AdvancedRiskMetrics.trackingError(null, null)), is(true));
+        assertThat(Double.isNaN(AdvancedRiskMetrics.annualizedTrackingError(null, null)), is(true));
     }
 
     @Test
@@ -244,11 +247,11 @@ public class AdvancedRiskMetricsTest
 
         when(portfolio.getPerformanceIRR()).thenReturn(0.10);
         when(benchmark.getPerformanceIRR()).thenReturn(0.06);
-        
+
         when(portfolio.getDeltaPercentage()).thenReturn(new double[] { 0.02, 0.01 });
         when(benchmark.getDeltaPercentage()).thenReturn(new double[] { 0.01, 0.02 });
 
-        double ir = AdvancedRiskMetrics.informationRatio(portfolio, benchmark);
+        double ir = AdvancedRiskMetrics.annualizedInformationRatio(portfolio, benchmark);
         assertThat(ir, closeTo(0.17817416127494956, TOLERANCE));
     }
 
@@ -264,7 +267,7 @@ public class AdvancedRiskMetricsTest
         when(portfolio.getDeltaPercentage()).thenReturn(new double[] { 0.02, 0.01 });
         when(benchmark.getDeltaPercentage()).thenReturn(new double[] { 0.01, 0.02 });
 
-        double ir = AdvancedRiskMetrics.informationRatio(portfolio, benchmark);
+        double ir = AdvancedRiskMetrics.annualizedInformationRatio(portfolio, benchmark);
         assertThat(ir, closeTo(-0.26726124191242434, TOLERANCE));
     }
 
@@ -278,7 +281,7 @@ public class AdvancedRiskMetricsTest
         when(p.getDeltaPercentage()).thenReturn(identical);
         when(b.getDeltaPercentage()).thenReturn(identical);
 
-        double ir = AdvancedRiskMetrics.informationRatio(p, b);
+        double ir = AdvancedRiskMetrics.annualizedInformationRatio(p, b);
         assertThat(Double.isNaN(ir), is(true));
     }
 
@@ -286,8 +289,7 @@ public class AdvancedRiskMetricsTest
     public void testInsufficientData()
     {
         when(index.getDeltaPercentage()).thenReturn(new double[] { 0.01 });
-        assertThat(Double.isNaN(AdvancedRiskMetrics.valueAtRisk(index, 0.95)), is(true));
-
+        assertThat(Double.isNaN(AdvancedRiskMetrics.annualizedValueAtRisk(index, 0.95)), is(true));
         assertThat(Double.isNaN(AdvancedRiskMetrics.skewness(index)), is(true));
     }
 
@@ -307,5 +309,4 @@ public class AdvancedRiskMetricsTest
 
         return Math.sqrt(squared / (values.length - 1));
     }
-
 }

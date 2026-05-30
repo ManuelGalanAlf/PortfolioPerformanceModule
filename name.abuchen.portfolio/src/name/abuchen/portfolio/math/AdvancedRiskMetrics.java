@@ -43,7 +43,7 @@ public final class AdvancedRiskMetrics
      * This is the volatility measure used by Sharpe, skewness, kurtosis and
      * tracking error in this class.
      */
-    static double standardDeviation(double[] values)
+    private static double standardDeviation(double[] values)
     {
         if (values == null || values.length < 2)
             return Double.NaN;
@@ -79,6 +79,12 @@ public final class AdvancedRiskMetrics
         return Math.sqrt(squaredDeviations / (count - 1));
     }
 
+    public static double annualizedStandardDeviation(double[] values)
+    {
+        double daily = standardDeviation(values);
+        return Double.isNaN(daily) ? Double.NaN : daily * Math.sqrt(FinancialConstants.US_TRADING_DAYS_PER_YEAR);
+    }
+
     /**
      * Calculates the Downside Risk (σd), i.e. the standard deviation of returns
      * that fall below the given target return (typically 0).
@@ -96,7 +102,7 @@ public final class AdvancedRiskMetrics
      * @throws IllegalArgumentException
      *                                      if returns is null or empty
      */
-    public static double downsideRisk(double[] returns, double target)
+    private static double downsideRisk(double[] returns, double target)
     {
         if (returns == null || returns.length == 0)
             throw new IllegalArgumentException("Returns array must not be null or empty"); //$NON-NLS-1$
@@ -117,6 +123,12 @@ public final class AdvancedRiskMetrics
         return Math.sqrt(sumSquared / count);
     }
 
+    public static double annualizedDownsideRisk(double[] returns, double target)
+    {
+        double daily = downsideRisk(returns, target);
+        return Double.isNaN(daily) ? Double.NaN : daily * Math.sqrt(FinancialConstants.US_TRADING_DAYS_PER_YEAR);
+    }
+
     /**
      * Calculates the Sharpe Ratio for the given performance index.
      * <p>
@@ -134,7 +146,7 @@ public final class AdvancedRiskMetrics
      * @return Sharpe Ratio, or {@link Double#NaN} if volatility is zero or data
      *         is insufficient
      */
-    public static double sharpeRatio(PerformanceIndex index, double riskFreeRate)
+    public static double annualizedSharpeRatio(PerformanceIndex index, double riskFreeRate)
     {
         if (index == null)
             return Double.NaN;
@@ -160,7 +172,7 @@ public final class AdvancedRiskMetrics
 
         // Annualize standardDeviation (volatility) to match the annualized IRR
         // (rp)
-        double annualizedStandardDeviation = standardDeviation * Math.sqrt(FinancialConstants.US_TRADING_DAYS_PER_YEAR);
+        double annualizedStandardDeviation = annualizedStandardDeviation(delta);
 
         return (annualizedIRR - riskFreeRate) / annualizedStandardDeviation;
     }
@@ -199,7 +211,7 @@ public final class AdvancedRiskMetrics
      * @return Sortino Ratio, or {@link Double#NaN} if downside risk is zero or
      *         data is insufficient
      */
-    public static double sortinoRatio(PerformanceIndex index, double riskFreeRate)
+    public static double annualizedSortinoRatio(PerformanceIndex index, double riskFreeRate)
     {
         if (index == null)
             return Double.NaN;
@@ -227,7 +239,7 @@ public final class AdvancedRiskMetrics
             return Double.NaN;
 
         // Annualize downsideRisk to match the annualized IRR (rp)
-        double annualizedDownsideRisk = downsideRisk * Math.sqrt(FinancialConstants.US_TRADING_DAYS_PER_YEAR);
+        double annualizedDownsideRisk = annualizedDownsideRisk(delta, dailyTarget);
 
         return (annualizedIRR - riskFreeRate) / annualizedDownsideRisk;
     }
@@ -246,7 +258,7 @@ public final class AdvancedRiskMetrics
      * @return Calmar Ratio, or {@link Double#NaN} if max drawdown is zero or
      *         data is insufficient
      */
-    public static double calmarRatio(PerformanceIndex index)
+    public static double annualizedCalmarRatio(PerformanceIndex index)
     {
         if (index == null)
             return Double.NaN;
@@ -296,7 +308,7 @@ public final class AdvancedRiskMetrics
      * @throws IllegalArgumentException
      *                                      if confidence is not in (0, 1)
      */
-    public static double valueAtRisk(PerformanceIndex index, double confidence)
+    private static double valueAtRisk(PerformanceIndex index, double confidence)
     {
         if (confidence <= 0.0 || confidence >= 1.0)
             throw new IllegalArgumentException("Confidence must be between 0 and 1 (exclusive)"); //$NON-NLS-1$
@@ -325,6 +337,26 @@ public final class AdvancedRiskMetrics
     }
 
     /**
+     * Calculates the annualized historical Value at Risk (VaR) at the given confidence
+     * level.
+     * <p>
+     * This converts the empirical daily VaR into an annual horizon using the 
+     * square root of time rule (sqrt(252)). This makes it directly comparable 
+     * to parametric annualized metrics or IRR.
+     *
+     * @param index       the {@link PerformanceIndex} of the portfolio or security
+     * @param confidence  confidence level as a decimal between 0 and 1 (e.g. 0.95)
+     * @return annualized VaR as a positive decimal, or {@link Double#NaN} if data is insufficient
+     */
+    public static double annualizedValueAtRisk(PerformanceIndex index, double confidence)
+    {
+        double daily = valueAtRisk(index, confidence);
+
+        return Double.isNaN(daily) ? Double.NaN : daily * Math.sqrt(FinancialConstants.US_TRADING_DAYS_PER_YEAR);
+    }
+
+
+    /**
      * Calculates the arithmetic mean of periodic returns (Expected Return).
      * <p>
      * Formula: E(R) = Σ(Ri) / N
@@ -338,7 +370,7 @@ public final class AdvancedRiskMetrics
      * @return arithmetic mean of delta[] returns, or {@link Double#NaN} if data
      *         is insufficient
      */
-    public static double expectedReturn(PerformanceIndex index)
+    private static double expectedReturn(PerformanceIndex index)
     {
         if (index == null)
             return Double.NaN;
@@ -355,6 +387,13 @@ public final class AdvancedRiskMetrics
             sum += r;
 
         return sum / delta.length;
+    }
+
+
+    public static double annualizedExpectedReturn(PerformanceIndex index)
+    {
+        double daily = expectedReturn(index);
+        return Double.isNaN(daily) ? Double.NaN : daily * FinancialConstants.US_TRADING_DAYS_PER_YEAR;
     }
 
     /**
@@ -482,7 +521,7 @@ public final class AdvancedRiskMetrics
      * @return daily tracking error as a decimal, or {@link Double#NaN} if data
      *         is mismatched or insufficient
      */
-    public static double trackingError(PerformanceIndex portfolio, PerformanceIndex benchmark)
+    private static double trackingError(PerformanceIndex portfolio, PerformanceIndex benchmark)
     {
         if (portfolio == null || benchmark == null)
             return Double.NaN;
@@ -503,19 +542,6 @@ public final class AdvancedRiskMetrics
         return standardDeviation(diff);
     }
 
-    /**
-     * Calculates the annualized tracking error between a portfolio and its
-     * benchmark.
-     * <p>
-    * Annualized using sqrt(FinancialConstants.US_TRADING_DAYS_PER_YEAR) trading days.
-     *
-     * @param portfolio
-     *                      the {@link PerformanceIndex} of the portfolio or
-     *                      fund
-     * @param benchmark
-     *                      the {@link PerformanceIndex} of the benchmark index
-     * @return annualized tracking error as a decimal
-     */
     public static double annualizedTrackingError(PerformanceIndex portfolio, PerformanceIndex benchmark)
     {
         if (portfolio == null || benchmark == null)
@@ -545,7 +571,7 @@ public final class AdvancedRiskMetrics
      * @return annualized information ratio, or {@link Double#NaN} if tracking
      *         error is zero or data is insufficient
      */
-    public static double informationRatio(PerformanceIndex portfolio, PerformanceIndex benchmark)
+    public static double annualizedInformationRatio(PerformanceIndex portfolio, PerformanceIndex benchmark)
     {
         if (portfolio == null || benchmark == null)
             return Double.NaN;
@@ -565,5 +591,4 @@ public final class AdvancedRiskMetrics
 
         return (annualizedIRRPortfolio - annualizedIRRBenchmark) / annualizedTrackingError;
     }
-
 }

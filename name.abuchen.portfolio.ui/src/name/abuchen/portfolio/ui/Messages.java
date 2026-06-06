@@ -96,7 +96,6 @@ public class Messages extends NLS
     public static String LabelRebalancerMinWeight;
     public static String LabelRebalancerCorrelation;
     public static String LabelRebalancerAllowFractions;
-    public static String LabelRebalancerStrictCash;
     public static String LabelRebalancerMaxVolatility;
     public static String LabelRebalancerFixedCommission;
     public static String LabelRebalancerVariableCommission;

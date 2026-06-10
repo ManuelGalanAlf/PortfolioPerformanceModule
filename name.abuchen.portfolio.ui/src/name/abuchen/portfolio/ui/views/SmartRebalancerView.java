@@ -40,6 +40,7 @@ import name.abuchen.portfolio.model.SecurityPrice;
 import name.abuchen.portfolio.money.CurrencyConverter;
 import name.abuchen.portfolio.money.CurrencyConverterImpl;
 import name.abuchen.portfolio.money.ExchangeRateProviderFactory;
+import name.abuchen.portfolio.money.Values;
 import name.abuchen.portfolio.rebalance.ConstraintLayer;
 import name.abuchen.portfolio.rebalance.DecisionLogger;
 import name.abuchen.portfolio.rebalance.IntegrityLayer;
@@ -119,10 +120,9 @@ public class SmartRebalancerView extends AbstractHistoricView
 
     private PerformanceIndex portfolioIndex;
 
+    private RebalancingEngine engine;
     private List<PerformanceIndex> cachedAssets;
     private double[] cachedPrices;
-    private double[] cachedWeights;
-    private double cachedTotalValue;
     private double cachedTotalCash;
     private Interval cachedInterval;
 
@@ -162,6 +162,13 @@ public class SmartRebalancerView extends AbstractHistoricView
             if (!sash.isDisposed())
                 runAnalysis();
         });
+
+        engine = new RebalancingEngine();
+        engine.addLayer(new IntegrityLayer());
+        engine.addLayer(new RiskLayer());
+        engine.addLayer(new ConstraintLayer());
+        engine.addLayer(new RedundancyLayer());
+        engine.addLayer(new ViabilityLayer());
 
         return sash;
     }
@@ -592,16 +599,16 @@ public class SmartRebalancerView extends AbstractHistoricView
                         o -> {
                             double qty = ((Order) o).getQuantity();
                             return allowFractionsCheck.getSelection()
-                                            ? String.format("%,.2f", qty) //$NON-NLS-1$
-                                            : String.format("%,.0f", qty); //$NON-NLS-1$
+                                            ? String.format("%,.2f u.", qty) //$NON-NLS-1$
+                                            : String.format("%,.0f u.", qty); //$NON-NLS-1$
                         }, null);
 
         createColumn(ordersViewer, Messages.LabelRebalancerEstimatedPrice, 90,
-                        o -> String.format("%.2f", ((Order) o).getEstimatedPrice()), //$NON-NLS-1$
+                        o -> String.format("%.2f %s", ((Order) o).getEstimatedPrice(), getClient().getBaseCurrency()), //$NON-NLS-1$
                         null);
 
         createColumn(ordersViewer, Messages.LabelRebalancerTotalValue, 90,
-                        o -> String.format("%,.2f", ((Order) o).getTotalValue()), //$NON-NLS-1$
+                        o -> String.format("%,.2f %s", ((Order) o).getTotalValue(), getClient().getBaseCurrency()), //$NON-NLS-1$
                         null);
     }
 
@@ -611,8 +618,7 @@ public class SmartRebalancerView extends AbstractHistoricView
         tableContainer.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         tableContainer.setLayout(new TableColumnLayout());
 
-        impactViewer = new TableViewer(tableContainer,
-                        SWT.BORDER | SWT.FULL_SELECTION | SWT.H_SCROLL | SWT.V_SCROLL);
+        impactViewer = new TableViewer(tableContainer, SWT.BORDER | SWT.FULL_SELECTION | SWT.H_SCROLL | SWT.V_SCROLL);
         impactViewer.getTable().setHeaderVisible(true);
         impactViewer.getTable().setLinesVisible(true);
         impactViewer.setContentProvider(ArrayContentProvider.getInstance());
@@ -621,148 +627,189 @@ public class SmartRebalancerView extends AbstractHistoricView
                         o -> assetNameMap.getOrDefault((PerformanceIndex) o, "-"), //$NON-NLS-1$
                         null);
 
-        createColumn(impactViewer, Messages.LabelRebalancerCurrentWeight, 80,
-                        o -> {
-                            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
-                            if (ctx != null)
-                            {
-                                int idx = ctx.getAssets().indexOf(o);
-                                if (idx >= 0 && ctx.getCurrentWeights() != null)
-                                    return String.format("%.2f%%", ctx.getCurrentWeights()[idx] * 100); //$NON-NLS-1$
-                            }
-                            return "-"; //$NON-NLS-1$
-                        }, null);
+        createColumn(impactViewer, Messages.LabelRebalancerCurrentWeight, 80, o -> {
+            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
+            if (ctx != null)
+            {
+                int idx = ctx.getAssets().indexOf(o);
+                if (idx >= 0 && ctx.getCurrentWeights() != null)
+                    return String.format("%.2f%%", ctx.getCurrentWeights()[idx] * 100); //$NON-NLS-1$
+            }
+            return "-"; //$NON-NLS-1$
+        }, null);
 
-        createColumn(impactViewer, Messages.LabelRebalancerCurrentValue, 100,
-                        o -> {
-                            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
-                            if (ctx != null)
-                            {
-                                int idx = ctx.getAssets().indexOf(o);
-                                if (idx >= 0 && ctx.getCurrentWeights() != null)
-                                {
-                                    double val = ctx.getCurrentWeights()[idx] * ctx.getTotalPortfolioValue();
-                                    return String.format("%,.2f %s", val, getClient().getBaseCurrency()); //$NON-NLS-1$
-                                }
-                            }
-                            return "-"; //$NON-NLS-1$
-                        }, null);
+        createColumn(impactViewer, Messages.LabelRebalancerCurrentValue, 100, o -> {
+            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
+            if (ctx != null)
+            {
+                int idx = ctx.getAssets().indexOf(o);
+                if (idx >= 0 && ctx.getCurrentWeights() != null)
+                {
+                    double val = ctx.getCurrentWeights()[idx] * ctx.getTotalPortfolioValue();
+                    return String.format("%,.2f %s", val, getClient().getBaseCurrency()); //$NON-NLS-1$
+                }
+            }
+            return "-"; //$NON-NLS-1$
+        }, null);
 
-        createColumn(impactViewer, Messages.LabelRebalancerChange, 80,
-                        o -> {
-                            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
-                            if (ctx != null)
-                            {
-                                int idx = ctx.getAssets().indexOf(o);
-                                if (idx >= 0 && ctx.getCurrentWeights() != null && ctx.getFinalWeights() != null)
-                                {
-                                    double diff = (ctx.getFinalWeights()[idx] - ctx.getCurrentWeights()[idx]) * 100;
-                                    return String.format("%+.2f%%", diff); //$NON-NLS-1$
-                                }
-                            }
-                            return "-"; //$NON-NLS-1$
-                        }, o -> {
-                            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
-                            if (ctx != null && ctx.getCurrentWeights() != null && ctx.getFinalWeights() != null)
-                            {
-                                int idx = ctx.getAssets().indexOf(o);
-                                if (idx >= 0)
-                                {
-                                    double diff = ctx.getFinalWeights()[idx] - ctx.getCurrentWeights()[idx];
-                                    if (diff > 0.0001)
-                                        return Display.getCurrent().getSystemColor(SWT.COLOR_DARK_GREEN);
-                                    if (diff < -0.0001)
-                                        return Display.getCurrent().getSystemColor(SWT.COLOR_RED);
-                                }
-                            }
-                            return null;
-                        });
+        createColumn(impactViewer, Messages.LabelRebalancerTargetWeight, 80, o -> {
+            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
+            if (ctx != null)
+            {
+                int idx = ctx.getAssets().indexOf(o);
+                if (idx >= 0 && ctx.getFinalWeights() != null)
+                {
+                    double weightPercent = ctx.getFinalWeights()[idx] * 100.0;
+                    if (Math.abs(weightPercent) < 1e-6)
+                        weightPercent = 0.0;
+                    return String.format("%.2f%%", weightPercent); //$NON-NLS-1$
+                }
+            }
+            return "-"; //$NON-NLS-1$
+        }, o -> {
+            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
+            if (ctx != null && ctx.getCurrentWeights() != null && ctx.getFinalWeights() != null)
+            {
+                int idx = ctx.getAssets().indexOf(o);
+                if (idx >= 0)
+                {
+                    double deltaW = ctx.getFinalWeights()[idx] - ctx.getCurrentWeights()[idx];
+                    if (deltaW > 0.0001)
+                        return Display.getCurrent().getSystemColor(SWT.COLOR_DARK_GREEN);
+                    if (deltaW < -0.0001)
+                        return Display.getCurrent().getSystemColor(SWT.COLOR_RED);
+                }
+            }
+            return null;
+        });
 
-        createColumn(impactViewer, Messages.LabelRebalancerTargetWeight, 80,
-                        o -> {
-                            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
-                            if (ctx != null)
-                            {
-                                int idx = ctx.getAssets().indexOf(o);
-                                if (idx >= 0 && ctx.getFinalWeights() != null)
-                                    return String.format("%.2f%%", ctx.getFinalWeights()[idx] * 100); //$NON-NLS-1$
-                            }
-                            return "-"; //$NON-NLS-1$
-                        }, o -> {
-                            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
-                            if (ctx != null && ctx.getCurrentWeights() != null && ctx.getFinalWeights() != null)
-                            {
-                                int idx = ctx.getAssets().indexOf(o);
-                                if (idx >= 0)
-                                {
-                                    return ctx.getFinalWeights()[idx] < ctx.getCurrentWeights()[idx]
-                                                    ? Display.getCurrent().getSystemColor(SWT.COLOR_RED)
-                                                    : Display.getCurrent().getSystemColor(SWT.COLOR_DARK_GREEN);
-                                }
-                            }
-                            return null;
-                        });
+        createColumn(impactViewer, Messages.LabelRebalancerProjectedValue, 100, o -> {
+            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
+            if (ctx != null)
+            {
+                int idx = ctx.getAssets().indexOf(o);
+                if (idx >= 0 && ctx.getFinalWeights() != null)
+                {
+                    double investable = ctx.getTotalPortfolioValue() + ctx.getConfig().getNewCashAmount()
+                                    - ctx.getConfig().getCashBuffer();
+                    double val = ctx.getFinalWeights()[idx] * investable;
+                    return String.format("%,.2f %s", val, getClient().getBaseCurrency()); //$NON-NLS-1$
+                }
+            }
+            return "-"; //$NON-NLS-1$
+        }, o -> {
+            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
+            if (ctx != null && ctx.getCurrentWeights() != null && ctx.getFinalWeights() != null)
+            {
+                int idx = ctx.getAssets().indexOf(o);
+                if (idx >= 0)
+                {
+                    return ctx.getFinalWeights()[idx] < ctx.getCurrentWeights()[idx]
+                                    ? Display.getCurrent().getSystemColor(SWT.COLOR_RED)
+                                    : Display.getCurrent().getSystemColor(SWT.COLOR_DARK_GREEN);
+                }
+            }
+            return null;
+        });
 
-        createColumn(impactViewer, Messages.LabelRebalancerProjectedValue, 100,
-                        o -> {
-                            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
-                            if (ctx != null)
-                            {
-                                int idx = ctx.getAssets().indexOf(o);
-                                if (idx >= 0 && ctx.getFinalWeights() != null)
-                                {
-                                    double investable = ctx.getTotalPortfolioValue()
-                                                    + ctx.getConfig().getNewCashAmount()
-                                                    - ctx.getConfig().getCashBuffer();
-                                    double val = ctx.getFinalWeights()[idx] * investable;
-                                    return String.format("%,.2f %s", val, getClient().getBaseCurrency()); //$NON-NLS-1$
-                                }
-                            }
-                            return "-"; //$NON-NLS-1$
-                        }, o -> {
-                            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
-                            if (ctx != null && ctx.getCurrentWeights() != null && ctx.getFinalWeights() != null)
-                            {
-                                int idx = ctx.getAssets().indexOf(o);
-                                if (idx >= 0)
-                                {
-                                    return ctx.getFinalWeights()[idx] < ctx.getCurrentWeights()[idx]
-                                                    ? Display.getCurrent().getSystemColor(SWT.COLOR_RED)
-                                                    : Display.getCurrent().getSystemColor(SWT.COLOR_DARK_GREEN);
-                                }
-                            }
-                            return null;
-                        });
+        createColumn(impactViewer, Messages.LabelRebalancerWeightDelta, 120, o -> {
+            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
+            if (ctx != null)
+            {
+                int idx = ctx.getAssets().indexOf(o);
+                if (idx >= 0 && ctx.getCurrentWeights() != null && ctx.getFinalWeights() != null)
+                {
+                    double deltaPP = (ctx.getFinalWeights()[idx] - ctx.getCurrentWeights()[idx]) * 100.0;
+                    if (Math.abs(deltaPP) < 1e-4)
+                        return "0.00 pp"; //$NON-NLS-1$
+                    return String.format("%+.2f pp", deltaPP); //$NON-NLS-1$
+                }
+            }
+            return "-"; //$NON-NLS-1$
+        }, o -> {
+            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
+            if (ctx != null && ctx.getCurrentWeights() != null && ctx.getFinalWeights() != null)
+            {
+                int idx = ctx.getAssets().indexOf(o);
+                if (idx >= 0)
+                {
+                    double deltaW = ctx.getFinalWeights()[idx] - ctx.getCurrentWeights()[idx];
+                    if (deltaW > 0.0001)
+                        return Display.getCurrent().getSystemColor(SWT.COLOR_DARK_GREEN);
+                    if (deltaW < -0.0001)
+                        return Display.getCurrent().getSystemColor(SWT.COLOR_RED);
+                }
+            }
+            return null;
+        });
 
-        createColumn(impactViewer, Messages.ColumnStatus, 80,
-                        o -> {
-                            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
-                            if (ctx != null)
-                            {
-                                int idx = ctx.getAssets().indexOf(o);
-                                if (idx >= 0)
-                                {
-                                    String id = ctx.getAssetIdentifier(idx);
-                                    if (id != null && ctx.getConfig().isAssetFrozen(id))
-                                        return Messages.LabelRebalancerStatusFrozen;
-                                    return Messages.LabelRebalancerStatusNormal;
-                                }
-                            }
-                            return "-"; //$NON-NLS-1$
-                        }, o -> {
-                            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
-                            if (ctx != null)
-                            {
-                                int idx = ctx.getAssets().indexOf(o);
-                                if (idx >= 0)
-                                {
-                                    String id = ctx.getAssetIdentifier(idx);
-                                    if (id != null && ctx.getConfig().isAssetFrozen(id))
-                                        return Display.getCurrent().getSystemColor(SWT.COLOR_BLUE);
-                                }
-                            }
-                            return null;
-                        });
+        createColumn(impactViewer, Messages.LabelRebalancerValueDelta, 120, o -> {
+            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
+            if (ctx != null)
+            {
+                int idx = ctx.getAssets().indexOf(o);
+                if (idx >= 0 && ctx.getCurrentWeights() != null && ctx.getFinalWeights() != null)
+                {
+                    double curVal = ctx.getCurrentWeights()[idx] * ctx.getTotalPortfolioValue();
+                    double investable = ctx.getTotalPortfolioValue() + ctx.getConfig().getNewCashAmount()
+                                    - ctx.getConfig().getCashBuffer();
+                    double projVal = ctx.getFinalWeights()[idx] * investable;
+                    double deltaVal = projVal - curVal;
+                    if (Math.abs(deltaVal) < 0.01)
+                        return "0,00 " + getClient().getBaseCurrency(); //$NON-NLS-1$
+                    return String.format("%,+.2f %s", deltaVal, getClient().getBaseCurrency()); //$NON-NLS-1$
+                }
+            }
+            return "-"; //$NON-NLS-1$
+        }, o -> {
+            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
+            if (ctx != null && ctx.getCurrentWeights() != null && ctx.getFinalWeights() != null)
+            {
+                int idx = ctx.getAssets().indexOf(o);
+                if (idx >= 0)
+                {
+                    double curVal = ctx.getCurrentWeights()[idx] * ctx.getTotalPortfolioValue();
+                    double investable = ctx.getTotalPortfolioValue() + ctx.getConfig().getNewCashAmount()
+                                    - ctx.getConfig().getCashBuffer();
+                    double projVal = ctx.getFinalWeights()[idx] * investable;
+                    double deltaVal = projVal - curVal;
+                    if (deltaVal > 0.01)
+                        return Display.getCurrent().getSystemColor(SWT.COLOR_DARK_GREEN);
+                    if (deltaVal < -0.01)
+                        return Display.getCurrent().getSystemColor(SWT.COLOR_RED);
+                }
+            }
+            return null;
+        });
+
+        createColumn(impactViewer, Messages.ColumnStatus, 80, o -> {
+            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
+            if (ctx != null)
+            {
+                int idx = ctx.getAssets().indexOf(o);
+                if (idx >= 0)
+                {
+                    String id = ctx.getAssetIdentifier(idx);
+                    if (id != null && ctx.getConfig().isAssetFrozen(id))
+                        return Messages.LabelRebalancerStatusFrozen;
+                    return Messages.LabelRebalancerStatusNormal;
+                }
+            }
+            return "-"; //$NON-NLS-1$
+        }, o -> {
+            RebalancingContext ctx = (RebalancingContext) impactViewer.getData("ctx"); //$NON-NLS-1$
+            if (ctx != null)
+            {
+                int idx = ctx.getAssets().indexOf(o);
+                if (idx >= 0)
+                {
+                    String id = ctx.getAssetIdentifier(idx);
+                    if (id != null && ctx.getConfig().isAssetFrozen(id))
+                        return Display.getCurrent().getSystemColor(SWT.COLOR_BLUE);
+                }
+            }
+            return null;
+        });
     }
 
     private void createColumn(TableViewer viewer, String header, int width,
@@ -831,30 +878,12 @@ public class SmartRebalancerView extends AbstractHistoricView
                 return;
             }
 
-            List<Long> marketValues = new ArrayList<>();
-            for (PerformanceIndex pi : cachedAssets)
-            {
-                long[] totals = pi.getTotals();
-                long marketValue = (totals != null && totals.length > 0) ? totals[totals.length - 1] : 0L;
-                marketValues.add(marketValue);
-            }
-
-            double totalMarketValueRaw = marketValues.stream().mapToDouble(Long::doubleValue).sum();
-            double totalAssetsValue = totalMarketValueRaw / name.abuchen.portfolio.money.Values.Amount.divider();
+            
 
             cachedTotalCash = getClient().getAccounts().stream()
                             .mapToDouble(a -> (double) a.getCurrentAmount(java.time.LocalDateTime.now())
                                             / name.abuchen.portfolio.money.Values.Amount.divider())
                             .sum();
-
-            cachedTotalValue = totalAssetsValue + cachedTotalCash;
-
-            cachedWeights = new double[cachedAssets.size()];
-            if (cachedTotalValue > 0)
-            {
-                for (int i = 0; i < cachedAssets.size(); i++)
-                    cachedWeights[i] = (marketValues.get(i) / name.abuchen.portfolio.money.Values.Amount.divider()) / cachedTotalValue;
-            }
 
             cachedPrices = new double[cachedAssets.size()];
             for (int i = 0; i < cachedAssets.size(); i++)
@@ -880,9 +909,7 @@ public class SmartRebalancerView extends AbstractHistoricView
         }
 
         List<PerformanceIndex> assets = cachedAssets;
-        double[] currentWeights = cachedWeights;
         double[] assetPrices = cachedPrices;
-        double totalPortfolioValue = cachedTotalValue;
         double totalCash = cachedTotalCash;
 
         if (assets.isEmpty())
@@ -897,18 +924,8 @@ public class SmartRebalancerView extends AbstractHistoricView
             ids.add(assetNameMap.getOrDefault(pi, "?")); //$NON-NLS-1$
 
         RebalancingContext ctx = new RebalancingContext(assets, ids, config);
-
         ctx.setCashAccountBalance(totalCash);
-        ctx.setTotalPortfolioValue(totalPortfolioValue);
-        ctx.setCurrentWeights(currentWeights);
         ctx.setAssetPrices(assetPrices);
-
-        RebalancingEngine engine = new RebalancingEngine();
-        engine.addLayer(new IntegrityLayer());
-        engine.addLayer(new RiskLayer());
-        engine.addLayer(new ConstraintLayer());
-        engine.addLayer(new RedundancyLayer());
-        engine.addLayer(new ViabilityLayer());
 
         RebalancingContext resultCtx = engine.evaluateAndExecute(ctx);
 
@@ -1095,8 +1112,6 @@ public class SmartRebalancerView extends AbstractHistoricView
     {
         cachedAssets = null;
         cachedPrices = null;
-        cachedWeights = null;
-        cachedTotalValue = 0.0;
         cachedTotalCash = 0.0;
         cachedInterval = null;
         portfolioIndex = null;
@@ -1249,12 +1264,12 @@ public class SmartRebalancerView extends AbstractHistoricView
 
     private String formatNumber(double value)
     {
-        return Double.isNaN(value) ? "-" : String.format("%,.2f", value); //$NON-NLS-1$ //$NON-NLS-2$
+        return Double.isNaN(value) ? "-" : Values.PercentPlain.format(value); //$NON-NLS-1$
     }
 
     private String formatPercent(double value)
     {
-        return Double.isNaN(value) ? "-" : String.format("%,.2f%%", value * 100.0); //$NON-NLS-1$ //$NON-NLS-2$
+        return Double.isNaN(value) ? "-" : Values.Percent2.format(value); //$NON-NLS-1$
     }
 
     private void resetToDefaults()

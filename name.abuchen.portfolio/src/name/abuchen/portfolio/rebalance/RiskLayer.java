@@ -22,7 +22,7 @@ import name.abuchen.portfolio.snapshot.PerformanceIndex;
  * @see MinVolatilityStrategy
  * @see MaxSharpeStrategy
  */
-public class RiskLayer implements ILayer
+public class RiskLayer extends AbstractLayer
 {
     private final StrategyOptimizer optimizer;
 
@@ -53,17 +53,7 @@ public class RiskLayer implements ILayer
     @Override
     public void process(RebalancingContext context)
     {
-        if (context == null)
-            return;
-
         List<PerformanceIndex> assets = context.getAssets();
-
-        // 1. Validate inputs
-        if (!validateInput(context, assets))
-        {
-            return;
-        }
-
         RebalancingConfig config = context.getConfig();
         StrategyOptimizer selectedOptimizer = this.optimizer != null ? this.optimizer : createOptimizer(config);
 
@@ -71,13 +61,13 @@ public class RiskLayer implements ILayer
                         String.format("Computing target weights using %s strategy...",
                                         selectedOptimizer.getClass().getSimpleName()));
 
-        // 2. Log individual asset volatilities and expected returns
+        // 1. Log individual asset volatilities and expected returns
         logIndividualAssetMetrics(context, assets);
 
-        // 3. Build covariance and store correlation matrix for downstream layers
+        // 2. Build covariance and store correlation matrix for downstream layers
         Covariance covariance = calculateCovarianceAndSetCorrelation(context, assets);
 
-        // 4. Optimize target weights using the selected strategy
+        // 3. Optimize target weights using the selected strategy
         double[] targetWeights = selectedOptimizer.optimize(assets, covariance, config);
 
         if (targetWeights == null || targetWeights.length != assets.size())
@@ -96,25 +86,6 @@ public class RiskLayer implements ILayer
         // 6. Save and log final computed target weights
         context.setTargetWeights(targetWeights);
         logTargetWeights(context, targetWeights);
-    }
-
-    /**
-     * Validates that the list of assets is not null or empty before proceeding
-     * with risk calculations and portfolio optimization.
-     *
-     * @param context The shared rebalancing context.
-     * @param assets The list of assets to validate.
-     * @return true if the input is valid and contains elements; false otherwise.
-     */
-    private boolean validateInput(RebalancingContext context, List<PerformanceIndex> assets)
-    {
-        if (assets == null || assets.isEmpty())
-        {
-            context.getLogger().log("RiskLayer", "ABORT: Assets list is null or empty. Cannot calculate risk.");
-            context.setAborted(true);
-            return false;
-        }
-        return true;
     }
 
     /**
@@ -229,5 +200,17 @@ public class RiskLayer implements ILayer
             default:
                 return new MaxSharpeStrategy();
         }
+    }
+
+    @Override
+    protected double[][] weightCandidates(RebalancingContext context)
+    {
+        return null; // RiskLayer does not provide fallback candidates and it's the source of target weights.
+    }
+
+    @Override
+    protected String[] weightCandidateLabels()
+    {
+        return null;
     }
 }

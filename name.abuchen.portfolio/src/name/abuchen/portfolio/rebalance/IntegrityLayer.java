@@ -19,17 +19,17 @@ import name.abuchen.portfolio.snapshot.PerformanceIndex;
  * <li>No NaN or infinite values in the return series</li>
  * </ul>
  */
-public class IntegrityLayer implements ILayer
+public class IntegrityLayer extends AbstractLayer
 {
     private static final int MIN_OBSERVATIONS = 30;
 
     @Override
     public void process(RebalancingContext context)
     {
-        List<PerformanceIndex> assets = context.getAssets();
 
         // 1. Assets list must not be null or empty
-        if (!validateAssetsNotNullOrEmpty(context, assets))
+        List<PerformanceIndex> assets = context.getAssets();
+        if (!validateAssets(context, assets))
         {
             return;
         }
@@ -49,6 +49,11 @@ public class IntegrityLayer implements ILayer
         context.getLogger().log("IntegrityLayer",
                         String.format("All %d assets passed integrity checks.", assets.size()));
 
+        // 3. Calculate current weights
+        computeAndSetCurrentWeights(context);
+        if (context.isAborted())
+            return;
+
         // 3. Log frozen assets for auditability
         logFrozenAssets(context, assets, context.getConfig());
     }
@@ -61,11 +66,12 @@ public class IntegrityLayer implements ILayer
      * @param assets The list of assets to validate.
      * @return true if the list is valid and has elements; false otherwise.
      */
-    private boolean validateAssetsNotNullOrEmpty(RebalancingContext context, List<PerformanceIndex> assets)
+    protected boolean validateAssets(RebalancingContext context, List<PerformanceIndex> assets)
     {
         if (assets == null || assets.isEmpty())
         {
-            context.getLogger().log("IntegrityLayer", "ABORT: Assets list is null or empty.");
+            context.getLogger().log(getClass().getSimpleName(),
+                "ABORT: Assets list is null or empty.");
             context.setAborted(true);
             return false;
         }
@@ -127,6 +133,50 @@ public class IntegrityLayer implements ILayer
         return true;
     }
 
+    private void computeAndSetCurrentWeights(RebalancingContext context)
+    {
+        List<PerformanceIndex> assets = context.getAssets();
+        int n = assets.size();
+        double[] currentWeights = new double[n];
+        double total = 0.0;
+        double divider = name.abuchen.portfolio.money.Values.Amount.divider();
+
+        for (int i = 0; i < n; i++)
+        {
+            long[] totals = assets.get(i).getTotals();
+
+            double lastValue = (totals != null && totals.length > 0)
+                            ? totals[totals.length - 1] / divider
+                            : 0.0;
+
+            currentWeights[i] = lastValue;
+            total += lastValue;
+        }
+
+        // Include the cash account balance in the total portfolio value
+        double cash = context.getCashAccountBalance();
+        // The full portfolio (equities + cash)
+        total += cash;
+
+        if (total <= 0.0)
+        {
+            context.getLogger().log("IntegrityLayer",
+                "ABORT: Total portfolio value is zero. Cannot compute current weights.");
+            context.setAborted(true);
+            return;
+        }
+
+        for (int i = 0; i < n; i++)
+            currentWeights[i] /= total;
+
+        context.setTotalPortfolioValue(total);
+        context.setCurrentWeights(currentWeights);
+
+        context.getLogger().log("IntegrityLayer",
+            String.format("Current weights computed from market values (equities=%.2f, cash=%.2f, total=%.2f).",
+                            total - cash, cash, total));
+    }
+
     /**
      * Identifies and logs frozen assets (blacklist) in the audit trail.
      * These assets will be excluded from optimization by downstream layers,
@@ -158,5 +208,17 @@ public class IntegrityLayer implements ILayer
                                                 frozenCount));
             }
         }
+    }
+
+    @Override
+    protected double[][] weightCandidates(RebalancingContext context)
+    {
+        return null; // operates on raw assets, not weights
+    }
+
+    @Override
+    protected String[] weightCandidateLabels()
+    {
+        return null;
     }
 }

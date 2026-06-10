@@ -17,23 +17,26 @@ import name.abuchen.portfolio.snapshot.PerformanceIndex;
  * <li><b>Sell-first ordering:</b> Sells are placed before buys to free capital</li>
  * </ul>
  */
-public class ViabilityLayer implements ILayer
+public class ViabilityLayer extends AbstractLayer
 {
     private static final double COMMISSION_THRESHOLD = 0.02;
 
     @Override
     public void process(RebalancingContext context)
     {
-        double[] desiredWeights = loadAndValidateDesiredWeights(context);
-        if (desiredWeights == null)
+        double[] weights = resolveWeightsWithFallback(context);
+        if (weights == null)
+            return;
+
+        double[] current = context.getCurrentWeights();
+
+        if (current == null)
         {
-            context.getLogger().log("ViabilityLayer", "ABORT: No desired weights available.");
+            context.getLogger().log("ViabilityLayer",
+                            "ABORT: currentWeights is null. IntegrityLayer must run before ViabilityLayer.");
             context.setAborted(true);
             return;
         }
-
-        int n = desiredWeights.length;
-        double[] current = getOrInitializeCurrentWeights(context, n);
 
         double totalValue = context.getTotalPortfolioValue();
         RebalancingConfig config = context.getConfig();
@@ -46,6 +49,7 @@ public class ViabilityLayer implements ILayer
                             String.format("ABORT: Investable value is zero or negative after cash buffer (Total=%.2f, NewCash=%.2f, CashBuffer=%.2f, Investable=%.2f).",
                                             totalValue, config.getNewCashAmount(), cashBuffer, investableValue));
             context.setAborted(true);
+            context.setFinalWeights(current.clone());
             return;
         }
 
@@ -59,16 +63,16 @@ public class ViabilityLayer implements ILayer
         double startingCash = calculateStartingCash(context, config, cashBuffer);
         double[] availableCashRef = new double[] { startingCash };
 
-        double[] finalWeights = desiredWeights.clone();
+        double[] finalWeights = weights.clone();
 
         // Pass 1: SELLS first (to free capital)
-        processSells(context, context.getAssets(), config, investableValue, desiredWeights, currentAdjusted, finalWeights, availableCashRef);
+        processSells(context, context.getAssets(), config, investableValue, weights, currentAdjusted, finalWeights, availableCashRef);
 
         // Pass 2: BUYS
-        processBuys(context, context.getAssets(), config, investableValue, desiredWeights, currentAdjusted, finalWeights, availableCashRef);
+        processBuys(context, context.getAssets(), config, investableValue, weights, currentAdjusted, finalWeights, availableCashRef);
 
         // Redistribution of remaining residual cash
-        distributeResidualCash(context, context.getAssets(), config, investableValue, desiredWeights, currentAdjusted,
+        distributeResidualCash(context, context.getAssets(), config, investableValue, weights, currentAdjusted,
                         finalWeights, availableCashRef);
 
         context.setFinalWeights(finalWeights);
@@ -78,53 +82,6 @@ public class ViabilityLayer implements ILayer
                                         context.getProposedOrders().size()));
     }
 
-    /**
-     * Loads and validates the theoretical target weights resulting from previous layers
-     * (RedundancyLayer or ConstraintLayer). If no weights are found, aborts the pipeline.
-     *
-     * @param context The shared rebalancing context.
-     * @return The desired weights array if available; null otherwise.
-     */
-    private double[] loadAndValidateDesiredWeights(RebalancingContext context)
-    {
-        double[] desiredWeights = context.getRedundancyFilteredWeights();
-        if (desiredWeights == null)
-        {
-            desiredWeights = context.getConstrainedWeights();
-        }
-
-        if (desiredWeights == null)
-        {
-            context.getLogger().log("ViabilityLayer",
-                            "ABORT: No weights available from RedundancyLayer or ConstraintLayer.");
-            context.setAborted(true);
-            return null;
-        }
-        return desiredWeights;
-    }
-
-    /**
-     * Retrieves the actual current weights of the portfolio or initializes them
-     * equally if they are not defined in the context.
-     *
-     * @param context The shared rebalancing context.
-     * @param n The number of assets in the portfolio.
-     * @return The array of current asset weights.
-     */
-    private double[] getOrInitializeCurrentWeights(RebalancingContext context, int n)
-    {
-        double[] current = context.getCurrentWeights();
-        if (current == null)
-        {
-            current = new double[n];
-            double w = n > 0 ? 1.0 / n : 0.0;
-            for (int i = 0; i < n; i++)
-                current[i] = w;
-            context.getLogger().log("ViabilityLayer",
-                            "No current weights found; assuming equal distribution.");
-        }
-        return current;
-    }
 
     /**
      * Adjusts the current weights taking into account the new cash injection.
@@ -165,13 +122,13 @@ public class ViabilityLayer implements ILayer
      * @param assets The list of portfolio assets.
      * @param config The current rebalancing configuration.
      * @param investableValue The net total amount to invest in the market.
-     * @param desiredWeights The recommended target weights.
+     * @param weights The recommended target weights.
      * @param currentAdjusted The current weights adjusted to net assets.
      * @param finalWeights The final actual weights array of the portfolio.
      * @param availableCashRef Pointer to the available cash in the ledger.
      */
     private void processSells(RebalancingContext context, List<PerformanceIndex> assets, 
-                    RebalancingConfig config, double investableValue, double[] desiredWeights,
+                    RebalancingConfig config, double investableValue, double[] weights,
                     double[] currentAdjusted, double[] finalWeights, double[] availableCashRef)
     {
         int n = finalWeights.length;
@@ -185,7 +142,7 @@ public class ViabilityLayer implements ILayer
                 continue;
             }
 
-            double drift = desiredWeights[i] - currentAdjusted[i];
+            double drift = weights[i] - currentAdjusted[i];
 
             // Inertia filter: skip small moves EXCEPT when we are underfunded (availableCash < 0) and need to sell to raise cash
             if (Math.abs(drift) < config.getInertiaTolerance() && availableCashRef[0] >= 0.0)
@@ -213,13 +170,13 @@ public class ViabilityLayer implements ILayer
      * @param assets The list of portfolio assets.
      * @param config The current rebalancing configuration.
      * @param investableValue The net total amount to invest in the market.
-     * @param desiredWeights The recommended target weights.
+     * @param weights The recommended target weights.
      * @param currentAdjusted The current weights adjusted to net assets.
      * @param finalWeights The final actual weights array of the portfolio.
      * @param availableCashRef Pointer to the available cash in the ledger.
      */
     private void processBuys(RebalancingContext context, List<PerformanceIndex> assets, 
-                    RebalancingConfig config, double investableValue, double[] desiredWeights,
+                    RebalancingConfig config, double investableValue, double[] weights,
                     double[] currentAdjusted, double[] finalWeights, double[] availableCashRef)
     {
         int n = finalWeights.length;
@@ -228,7 +185,7 @@ public class ViabilityLayer implements ILayer
             if (isFrozenAsset(context, i))
                 continue;
 
-            double drift = desiredWeights[i] - currentAdjusted[i];
+            double drift = weights[i] - currentAdjusted[i];
 
             if (Math.abs(drift) < config.getInertiaTolerance())
             {
@@ -251,7 +208,7 @@ public class ViabilityLayer implements ILayer
         // Final cleanup: set very small weights to zero to avoid noise in the output
         for (int i = 0; i < finalWeights.length; i++)
         {
-            if (Math.abs(finalWeights[i]) < 1e-6) // Menor a 0.0001%
+            if (Math.abs(finalWeights[i]) < 1e-6)
             {
                 finalWeights[i] = 0.0;
             }
@@ -412,7 +369,7 @@ public class ViabilityLayer implements ILayer
      * minimizing cash drag.
      */
     private void distributeResidualCash(RebalancingContext context, List<PerformanceIndex> assets,
-                    RebalancingConfig config, double investableValue, double[] desiredWeights, double[] currentAdjusted,
+                    RebalancingConfig config, double investableValue, double[] weights, double[] currentAdjusted,
                     double[] finalWeights, double[] availableCashRef)
     {
         double tolerableThreshold = Math.max(100.0, investableValue * 0.0001);
@@ -429,10 +386,10 @@ public class ViabilityLayer implements ILayer
                 if (isFrozenAsset(context, i))
                     continue;
 
-                if (finalWeights[i] > currentAdjusted[i] && desiredWeights[i] > 0.0)
+                if (finalWeights[i] > currentAdjusted[i] && weights[i] > 0.0)
                 {
                     candidateIndices.add(i);
-                    totalCandidateWeights += desiredWeights[i];
+                    totalCandidateWeights += weights[i];
                 }
             }
 
@@ -447,7 +404,7 @@ public class ViabilityLayer implements ILayer
             // Allocate cash proportionally based on target weights
             for (int i : candidateIndices)
             {
-                double proportion = desiredWeights[i] / totalCandidateWeights;
+                double proportion = weights[i] / totalCandidateWeights;
                 double allocatedCash = availableCashRef[0] * proportion;
 
                 double lastPrice = 0.0;
@@ -555,5 +512,27 @@ public class ViabilityLayer implements ILayer
 
         String identifier = context.getAssetIdentifier(assetIndex);
         return identifier != null && context.getConfig().isAssetFrozen(identifier);
+    }
+
+    @Override
+    protected double[][] weightCandidates(RebalancingContext context)
+    {
+        return new double[][] {
+            context.getRedundancyFilteredWeights(),
+            context.getConstrainedWeights(),
+            context.getTargetWeights(),
+            context.getCurrentWeights()
+        };
+    }
+
+    @Override
+    protected String[] weightCandidateLabels()
+    {
+        return new String[] {
+            "redundancyFilteredWeights",
+            "constrainedWeights",
+            "targetWeights",
+            "currentWeights"
+        };
     }
 }

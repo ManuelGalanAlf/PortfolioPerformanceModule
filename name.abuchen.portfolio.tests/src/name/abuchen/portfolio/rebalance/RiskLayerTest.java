@@ -23,17 +23,6 @@ public class RiskLayerTest
     }
 
     @Test
-    public void testAbortWhenNoAssets()
-    {
-        RebalancingContext context = new RebalancingContext(null, null);
-        RiskLayer layer = new RiskLayer();
-        
-        layer.process(context);
-        
-        assertThat(context.isAborted(), is(true));
-    }
-
-    @Test
     public void testProcessGeneratesTargetWeightsAndCovariance()
     {
         // Two assets with some data

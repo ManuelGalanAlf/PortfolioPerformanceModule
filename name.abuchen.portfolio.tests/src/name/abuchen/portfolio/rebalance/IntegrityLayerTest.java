@@ -1,6 +1,8 @@
 package name.abuchen.portfolio.rebalance;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.closeTo;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.core.Is.is;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -18,6 +20,7 @@ public class IntegrityLayerTest
     {
         PerformanceIndex asset = mock(PerformanceIndex.class);
         when(asset.getDeltaPercentage()).thenReturn(deltas);
+        when(asset.getTotals()).thenReturn(new long[] { 100000L });
         return asset;
     }
 
@@ -122,5 +125,25 @@ public class IntegrityLayerTest
         layer.process(context);
         
         assertThat(context.isAborted(), is(false));
+        assertThat(context.getCurrentWeights(), is(notNullValue()));
+        assertThat(context.getCurrentWeights().length, is(1));
+        assertThat(context.getCurrentWeights()[0], closeTo(1.0, 1e-9));
+    }
+
+    @Test
+    public void testAbortWhenTotalPortfolioValueIsZero()
+    {
+        double[] deltas = new double[40];
+        Arrays.fill(deltas, 0.01);
+        PerformanceIndex asset = mock(PerformanceIndex.class);
+        when(asset.getDeltaPercentage()).thenReturn(deltas);
+        when(asset.getTotals()).thenReturn(new long[] { 0L }); // zero value
+
+        RebalancingContext context = new RebalancingContext(Collections.singletonList(asset), null);
+        IntegrityLayer layer = new IntegrityLayer();
+
+        layer.process(context);
+
+        assertThat(context.isAborted(), is(true));
     }
 }

@@ -18,17 +18,21 @@ import name.abuchen.portfolio.snapshot.PerformanceIndex;
  * <b>Context Object</b> pattern: layers communicate only through the
  * shared context without direct dependencies.
  */
-public class RedundancyLayer implements ILayer
+public class RedundancyLayer extends AbstractLayer
 {
     @Override
     public void process(RebalancingContext context)
     {
+        // 1. Validate inputs from context and correlation matrix
+        double[] weights = resolveWeightsWithFallback(context);
+        if (weights == null)
+            return;
+        
         double[][] correlation = context.getCorrelationMatrix();
-        double[] weights = context.getConstrainedWeights();
-
-        // 1. Validate inputs from context
-        if (!validateInputs(context, correlation, weights))
+        if (correlation == null)
         {
+            context.getLogger().log("RedundancyLayer", "ABORT: Missing correlation matrix.");
+            context.setAborted(true);
             return;
         }
 
@@ -52,27 +56,7 @@ public class RedundancyLayer implements ILayer
 
         // 5. Log redundancy summary
         logRedundancySummary(context, eliminated);
-    }
-
-    /**
-     * Validates that both the correlation matrix and the constrained weights array
-     * are present in the context. If either is missing, aborts the pipeline.
-     *
-     * @param context The shared rebalancing context.
-     * @param correlation The precomputed correlation matrix.
-     * @param weights The input constrained weights array.
-     * @return true if both inputs are available; false otherwise.
-     */
-    private boolean validateInputs(RebalancingContext context, double[][] correlation, double[] weights)
-    {
-        if (correlation == null || weights == null)
-        {
-            context.getLogger().log("RedundancyLayer", "ABORT: Missing correlation matrix or weights.");
-            context.setAborted(true);
-            return false;
-        }
-        return true;
-    }
+    } 
 
     /**
      * Scans the upper triangle of the correlation matrix searching for pairs
@@ -90,11 +74,14 @@ public class RedundancyLayer implements ILayer
                     double[] volatilities, double threshold, boolean[] eliminated)
     {
         int n = adjusted.length;
+
         // Scan the upper triangle of the correlation matrix
         for (int i = 0; i < n; i++)
         {
             if (eliminated[i])
                 continue;
+
+            boolean isFrozen = isFrozenAsset(context, i);
 
             for (int j = i + 1; j < n; j++)
             {
@@ -104,6 +91,13 @@ public class RedundancyLayer implements ILayer
                 if (i < correlation.length && j < correlation.length
                                 && Math.abs(correlation[i][j]) > threshold)
                 {
+                    if (isFrozen || isFrozenAsset(context, j))
+                    {
+                        context.getLogger().log("RedundancyLayer", String.format(
+                                        "Skipping redundant pair '%s' <-> '%s': one or both assets are frozen.",
+                                        getAssetName(context, i), getAssetName(context, j)));
+                        continue;
+                    }
                     processRedundantPair(context, adjusted, volatilities, eliminated, i, j, correlation[i][j]);
                 }
             }
@@ -134,7 +128,7 @@ public class RedundancyLayer implements ILayer
      * @param correlationValue The actual correlation value between both assets.
      */
     private void processRedundantPair(RebalancingContext context, double[] adjusted, double[] volatilities,
-                    boolean[] eliminated, int i, int j, double correlationValue)
+                boolean[] eliminated, int i, int j, double correlationValue)
     {
         String nameI = getAssetName(context, i);
         String nameJ = getAssetName(context, j);
@@ -144,7 +138,6 @@ public class RedundancyLayer implements ILayer
                         String.format("Redundant pair detected: '%s' <-> '%s' (corr=%.4f exceeds threshold %.4f).",
                                         nameI, nameJ, correlationValue, threshold));
 
-        // Criterion: eliminate the MORE volatile asset (keep the more stable one)
         int loser = volatilities[i] > volatilities[j] ? i : j;
         int survivor = loser == i ? j : i;
 
@@ -152,8 +145,7 @@ public class RedundancyLayer implements ILayer
         String nameSurvivor = getAssetName(context, survivor);
 
         context.getLogger().log("RedundancyLayer",
-                        String.format("Eliminating '%s' (vol=%.4f, weight=%.4f), "
-                                        + "keeping '%s' (vol=%.4f).",
+                        String.format("Eliminating '%s' (vol=%.4f, weight=%.4f), keeping '%s' (vol=%.4f).",
                                         nameLoser, volatilities[loser], adjusted[loser],
                                         nameSurvivor, volatilities[survivor]));
 
@@ -162,16 +154,42 @@ public class RedundancyLayer implements ILayer
         adjusted[loser] = 0.0;
         eliminated[loser] = true;
 
-        // Enforce maxWeightPerAsset constraint: cap survivor and redistribute excess to cash
         double maxWeight = context.getConfig().getMaxWeightPerAsset();
         if (adjusted[survivor] > maxWeight)
         {
             double excess = adjusted[survivor] - maxWeight;
             adjusted[survivor] = maxWeight;
-            
-            context.getLogger().log("RedundancyLayer",
-                            String.format("Capping survivor asset '%s' to maxWeight (%.4f). Excess (%.4f) redistributed to cash.",
-                                            nameSurvivor, maxWeight, excess));
+
+            double activeSum = 0.0;
+            int activeCount = 0;
+            for (int k = 0; k < adjusted.length; k++)
+            {
+                if (!eliminated[k] && k != survivor && adjusted[k] > 0.0)
+                {
+                    activeSum += adjusted[k];
+                    activeCount++;
+                }
+            }
+
+            if (activeCount > 0 && activeSum > 0.0)
+            {
+                for (int k = 0; k < adjusted.length; k++)
+                {
+                    if (!eliminated[k] && k != survivor && adjusted[k] > 0.0)
+                    {
+                        adjusted[k] += excess * (adjusted[k] / activeSum);
+                    }
+                }
+                context.getLogger().log("RedundancyLayer",
+                                String.format("Capping survivor '%s' to maxWeight (%.4f). Excess (%.4f) redistributed proportionally among %d active assets.",
+                                                nameSurvivor, maxWeight, excess, activeCount));
+            }
+            else
+            {
+                context.getLogger().log("RedundancyLayer",
+                                String.format("Capping survivor '%s' to maxWeight (%.4f). Excess (%.4f) redistributed to cash (no other active assets).",
+                                                nameSurvivor, maxWeight, excess));
+            }
         }
     }
 
@@ -218,5 +236,27 @@ public class RedundancyLayer implements ILayer
             vols[i] = Double.isNaN(annualizedVol) ? 1.0 : annualizedVol;
         }
         return vols;
+    }
+
+    private boolean isFrozenAsset(RebalancingContext context, int index)
+    {
+        String identifier = context.getAssetIdentifier(index);
+        return identifier != null && context.getConfig().isAssetFrozen(identifier);
+    }
+
+    @Override
+    protected double[][] weightCandidates(RebalancingContext context)
+    {
+        return new double[][] {
+            context.getConstrainedWeights(),
+            context.getTargetWeights(),
+            context.getCurrentWeights()
+        };
+    }
+
+    @Override
+    protected String[] weightCandidateLabels()
+    {
+        return new String[] { "constrainedWeights", "targetWeights", "currentWeights" };
     }
 }

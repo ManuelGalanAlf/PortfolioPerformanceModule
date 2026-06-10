@@ -45,15 +45,7 @@ public class RebalancingEngine
      */
     public RebalancingContext evaluateAndExecute(RebalancingContext context)
     {
-        // 1. Check config-change trigger
-        RebalancingTrigger.TriggerType configTrigger = trigger.evaluateConfigChanged(context.getConfig());
-        if (configTrigger != RebalancingTrigger.TriggerType.NONE)
-        {
-            context.getLogger().log("Engine", String.format("Trigger fired: %s — starting pipeline.", configTrigger));
-            trigger.updateLastEvaluationTime();
-            return execute(context);
-        }
-        // 2. Check event-based triggers first (Cash-in)
+        // 1. Check event-based triggers first (Cash-in)
         RebalancingTrigger.TriggerType eventTrigger = trigger.evaluateMoneyChanged(context);
         if (eventTrigger != RebalancingTrigger.TriggerType.NONE)
         {
@@ -63,7 +55,16 @@ public class RebalancingEngine
             return execute(context);
         }
 
-        // 3. Check time-based trigger
+        // 2. Check config-change trigger (Config-changed)
+        RebalancingTrigger.TriggerType configTrigger = trigger.evaluateConfigChanged(context.getConfig());
+        if (configTrigger != RebalancingTrigger.TriggerType.NONE)
+        {
+            context.getLogger().log("Engine", String.format("Trigger fired: %s — starting pipeline.", configTrigger));
+            trigger.updateLastEvaluationTime();
+            return execute(context);
+        }
+
+        // 3. Check time-based trigger (Time-based)
         RebalancingTrigger.TriggerType timeTrigger = trigger.evaluateTimeBased(context.getConfig());
         if (timeTrigger != RebalancingTrigger.TriggerType.NONE)
         {

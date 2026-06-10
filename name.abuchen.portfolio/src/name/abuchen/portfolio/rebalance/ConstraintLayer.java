@@ -10,7 +10,7 @@ package name.abuchen.portfolio.rebalance;
  * The algorithm iterates until all weights are within bounds and the sum
  * equals 1.0. This is the mathematically most delicate redistribution step.
  */
-public class ConstraintLayer implements ILayer
+public class ConstraintLayer extends AbstractLayer
 {
     private static final int MAX_ITERATIONS = 100;
     private static final double WEIGHT_TOLERANCE = 1e-9;
@@ -18,17 +18,14 @@ public class ConstraintLayer implements ILayer
     @Override
     public void process(RebalancingContext context)
     {
-        double[] target = context.getTargetWeights();
-
         // 1. Validate inputs
-        if (!validateInputWeights(context, target))
-        {
+        double[] weights = resolveWeightsWithFallback(context);
+        if (weights == null)
             return;
-        }
 
         double maxWeight = context.getConfig().getMaxWeightPerAsset();
         double minWeight = context.getConfig().getMinWeightPerAsset();
-        int n = target.length;
+        int n = weights.length;
 
         // 2. Validate feasibility of constraints
         if (!validateConstraintsFeasibility(context, n, minWeight, maxWeight))
@@ -40,7 +37,7 @@ public class ConstraintLayer implements ILayer
                         String.format("Applying constraints: maxWeight=%.4f, minWeight=%.4f",
                                         maxWeight, minWeight));
 
-        double[] constrained = target.clone();
+        double[] constrained = weights.clone();
 
         // 3. Perform iterative redistribution to enforce bounds and keep sum = 1.0
         redistributeWeightsIteratively(context, constrained, minWeight, maxWeight);
@@ -52,26 +49,7 @@ public class ConstraintLayer implements ILayer
         context.setConstrainedWeights(constrained);
         logConstrainedWeights(context, constrained);
     }
-
-    /**
-     * Validates that the target weights array (produced by the RiskLayer)
-     * is not null. If no weights are available, aborts the pipeline.
-     *
-     * @param context The shared rebalancing context.
-     * @param target The proposed target weights array.
-     * @return true if the target weights are available; false otherwise.
-     */
-    private boolean validateInputWeights(RebalancingContext context, double[] target)
-    {
-        if (target == null)
-        {
-            context.getLogger().log("ConstraintLayer", "ABORT: No target weights available.");
-            context.setAborted(true);
-            return false;
-        }
-        return true;
-    }
-
+ 
     /**
      * Verifies the mathematical feasibility of the user-defined constraints.
      * If the sum of the minimum weights exceeds 1.0, or if the sum of the maximum weights
@@ -241,5 +219,20 @@ public class ConstraintLayer implements ILayer
         }
         sb.append("]");
         context.getLogger().log("ConstraintLayer", sb.toString());
+    }
+
+    @Override
+    protected double[][] weightCandidates(RebalancingContext context)
+    {
+        return new double[][] {
+            context.getTargetWeights(),
+            context.getCurrentWeights()
+        };
+    }
+
+    @Override
+    protected String[] weightCandidateLabels()
+    {
+        return new String[] { "targetWeights", "currentWeights" };
     }
 }

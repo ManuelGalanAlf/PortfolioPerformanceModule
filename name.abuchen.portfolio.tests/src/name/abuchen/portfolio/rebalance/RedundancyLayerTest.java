@@ -26,7 +26,8 @@ public class RedundancyLayerTest
     @Test
     public void testAbortWhenMissingCorrelationMatrix()
     {
-        RebalancingContext context = new RebalancingContext(null, null);
+        RebalancingContext context = new RebalancingContext(
+                        Arrays.asList(mock(PerformanceIndex.class), mock(PerformanceIndex.class)), null);
         context.setConstrainedWeights(new double[] { 0.5, 0.5 });
         // Correlation matrix is null
 
@@ -39,7 +40,8 @@ public class RedundancyLayerTest
     @Test
     public void testAbortWhenMissingWeights()
     {
-        RebalancingContext context = new RebalancingContext(null, null);
+        RebalancingContext context = new RebalancingContext(
+                        Arrays.asList(mock(PerformanceIndex.class), mock(PerformanceIndex.class)), null);
         context.setCorrelationMatrix(new double[][] { { 1.0 } });
         // Constrained weights are null
 
@@ -55,7 +57,10 @@ public class RedundancyLayerTest
         RebalancingConfig config = new RebalancingConfig();
         config.setCorrelationThreshold(0.85);
 
-        RebalancingContext context = new RebalancingContext(null, config);
+        PerformanceIndex a0 = createMockAsset(new double[] { 0.01, 0.01, 0.01, 0.01 });
+        PerformanceIndex a1 = createMockAsset(new double[] { 0.01, 0.01, 0.01, 0.01 });
+
+        RebalancingContext context = new RebalancingContext(Arrays.asList(a0, a1), config);
         context.setConstrainedWeights(new double[] { 0.50, 0.50 });
         
         // Correlation is 0.50, which is < 0.85

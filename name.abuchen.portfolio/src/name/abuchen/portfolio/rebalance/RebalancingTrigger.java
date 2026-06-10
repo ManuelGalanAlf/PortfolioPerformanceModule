@@ -148,6 +148,8 @@ public class RebalancingTrigger
     /**
      * Builds a hash from all user-configurable fields of the config.
      * Only fields that affect the pipeline output are included.
+     * NOTE: {@code getNewCashAmount()} is intentionally excluded because
+     * new capital injections are handled by the CASH_IN trigger, not CONFIG_CHANGED.
      */
     private int buildConfigHash(RebalancingConfig config)
     {
@@ -159,7 +161,6 @@ public class RebalancingTrigger
             config.getInertiaTolerance(),
             config.getMaxPortfolioVolatility(),
             config.getMonitoringIntervalMinutes(),
-            config.getNewCashAmount(),
             config.getCommissionFixed(),
             config.getCommissionVariable(),
             config.isAllowFractions(),
